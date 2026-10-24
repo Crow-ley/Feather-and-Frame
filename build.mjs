@@ -18,7 +18,6 @@ const id = manifest.id;
 
 // 1. The tool page, with its images written in as base64 so it needs no other files.
 const page = read("src/tool.html").toString()
-  .replace("__RING__", b64("assets/ring.webp"))
   .replace("__FAVICON__", b64("assets/favicon.png"))
   .replace("__DISCORD_SERVER__", b64("assets/discord-server.webp"))
   .replace("__DISCORD_USER__", b64("assets/discord-user.webp"));

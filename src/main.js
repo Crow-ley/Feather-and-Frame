@@ -18,6 +18,7 @@ Hooks.once("init", () => {
   reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
+  game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
 });
 
 // Helpers
@@ -49,6 +50,103 @@ async function upload(file, folder) {
   let path = res?.path ?? `${folder}/${file.name}`;
   // Version tag so cached textures aren't reused and repeat sends still count as a change.
   return path.replace(/\?.*$/, "") + "?v=" + Date.now().toString(36);
+}
+
+// Dynamic ring
+// The module ships no ring art. It reads the spritesheet of the ring picked in Foundry's
+// "Dynamic Token Ring" setting and draws its largest frame at 1024 px.
+const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.getRoute(p));
+let ringSheet = null;
+function loadRingSheet() {
+  const path = CONFIG.Token.ring?.spritesheet;
+  if (!path) return Promise.resolve(null);
+  if (ringSheet?.path === path) return ringSheet.load;
+  const load = (async () => {
+    const res = await fetch(routeOf(path));
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    const json = await res.json();
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = routeOf(path.replace(/[^/]*$/, "") + json.meta.image);
+    await img.decode();
+    const frames = Object.entries(json.frames);
+    const rings = frames.filter(([name]) => !/bkg$/i.test(name)).sort((a, b) => b[1].sourceSize.w - a[1].sourceSize.w);
+    if (!rings.length) return null;
+    const [name, ring] = rings[0];
+    const bkg = json.frames[`${name}-bkg`] ?? frames.find(([n, f]) => /bkg$/i.test(n) && f.sourceSize.w === ring.sourceSize.w)?.[1] ?? null;
+    return { img, ring, bkg, config: json.config ?? {} };
+  })();
+  ringSheet = { path, load };
+  load.catch(() => { if (ringSheet?.load === load) ringSheet = null; });
+  return load;
+}
+
+// Draws one spritesheet frame scaled to fill a size x size square (handles trimmed and rotated frames).
+function drawFrame(ctx, img, f, size) {
+  const k = size / f.sourceSize.w;
+  const s = f.trimmed ? f.spriteSourceSize : { x: 0, y: 0, w: f.sourceSize.w, h: f.sourceSize.h };
+  ctx.save();
+  ctx.translate(s.x * k, s.y * k);
+  ctx.scale(k, k);
+  if (f.rotated) {
+    ctx.translate(0, s.h);
+    ctx.rotate(-Math.PI / 2);
+    ctx.drawImage(img, f.frame.x, f.frame.y, f.frame.h, f.frame.w, 0, 0, s.h, s.w);
+  } else ctx.drawImage(img, f.frame.x, f.frame.y, f.frame.w, f.frame.h, 0, 0, s.w, s.h);
+  ctx.restore();
+}
+
+// The color Foundry uses for the ring band when the token has no ring color of its own.
+function dispositionColor(actor) {
+  const colors = CONFIG.Canvas.dispositionColors, tok = actor?.prototypeToken;
+  if (actor?.hasPlayerOwner) return colors.PARTY;
+  const key = Object.entries(CONST.TOKEN_DISPOSITIONS).find(([, v]) => v === tok?.disposition)?.[0];
+  return colors[key] ?? colors.NEUTRAL;
+}
+const css = (c) => (c == null || c === "" ? null : foundry.utils.Color.from(c).css);
+
+// Foundry's ring as a 1024 px PNG, colored the way the actor's token would be.
+// In the spritesheet the color band is drawn in pure red or magenta, with the red channel as
+// its strength. Foundry's shader paints the ring color there, so the same is done here per pixel.
+async function ringImage(actor) {
+  const sheet = await loadRingSheet();
+  if (!sheet) return null;
+  const size = 1024, half = size / 2, c = document.createElement("canvas");
+  c.width = c.height = size;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  const colors = actor?.prototypeToken?.ring?.colors ?? {};
+  if (sheet.bkg) {
+    const b = document.createElement("canvas");
+    b.width = b.height = size;
+    const bx = b.getContext("2d");
+    drawFrame(bx, sheet.img, sheet.bkg, size);
+    const tint = css(colors.background) ?? css(sheet.config.defaultBackgroundColor);
+    if (tint) {
+      bx.globalCompositeOperation = "multiply"; bx.fillStyle = tint; bx.fillRect(0, 0, size, size);
+      bx.globalCompositeOperation = "destination-in"; drawFrame(bx, sheet.img, sheet.bkg, size);
+    }
+    x.drawImage(b, 0, 0);
+  }
+  const r = document.createElement("canvas");
+  r.width = r.height = size;
+  const rx = r.getContext("2d", { willReadFrequently: true });
+  drawFrame(rx, sheet.img, sheet.ring, size);
+  const band = sheet.config.defaultColorBand ?? { startRadius: 0.666, endRadius: 0.7225 };
+  const color = foundry.utils.Color.from(css(colors.ring) ?? css(sheet.config.defaultRingColor) ?? css(dispositionColor(actor)));
+  const [cr, cg, cb] = color.rgb.map((v) => v * 255);
+  const r0 = band.startRadius * half - 1, r1 = band.endRadius * half + 1, lo = Math.floor(half - r1), n = Math.ceil(r1 * 2);
+  const data = rx.getImageData(lo, lo, n, n), d = data.data;
+  for (let y = 0; y < n; y++) for (let xx = 0; xx < n; xx++) {
+    const dist = Math.hypot(lo + xx + 0.5 - half, lo + y + 0.5 - half);
+    if (dist < r0 || dist > r1) continue;
+    const i = (y * n + xx) * 4;
+    if (d[i + 1] > d[i] * 0.25) continue; // metal and shading in the band stay as they are
+    const k = d[i] / 255;
+    d[i] = cr * k; d[i + 1] = cg * k; d[i + 2] = cb * k;
+  }
+  rx.putImageData(data, lo, lo);
+  x.drawImage(r, 0, 0);
+  return c.toDataURL("image/png");
 }
 
 // Window
@@ -154,6 +252,7 @@ class FeatherFrameApp extends ApplicationV2 {
       previewStart: (id) => this.previewStart(id),
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
+      ring: (id) => ringImage(game.actors.get(id) ?? null),
     };
   }
 
@@ -330,7 +429,50 @@ function openApp(actor) {
   if (!app) app = new FeatherFrameApp();
   if (actor) app.actor = actor;
   Promise.resolve(app.render({ force: true })).then(() => { if (actor) app.setActor(actor); });
+  checkForUpdate();
   return app;
+}
+
+// Update check
+// The module isn't listed on Foundry's package site yet, so it checks its GitHub releases itself.
+// Runs once per session, for the GM only, the first time the window opens.
+const REPO = "Crow-ley/feather-and-frame";
+const MANIFEST = `https://github.com/${REPO}/releases/latest/download/module.json`;
+let updateChecked = false;
+async function checkForUpdate() {
+  if (updateChecked || !game.user.isGM) return;
+  updateChecked = true;
+  let release;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return;
+    release = await res.json();
+  } catch (e) { return; } // offline or GitHub unreachable: say nothing
+  const latest = String(release.tag_name ?? "").replace(/^v/i, "");
+  const installed = game.modules.get(ID)?.version ?? "0";
+  if (!latest || !foundry.utils.isNewerVersion(latest, installed)) return;
+  if (game.settings.get(ID, "skipVersion") === latest) return;
+  const page = release.html_url ?? `https://github.com/${REPO}/releases/latest`;
+  const content = `
+    <p>Version <strong>${latest}</strong> is out. You have ${installed}.</p>
+    <p>To update, go to Foundry's setup screen, open Add-on Modules and click the update button next to ${TITLE}.
+    If that button doesn't appear, uninstall the module and install it again with this manifest URL:</p>
+    <input type="text" readonly value="${MANIFEST}" style="width:100%" onclick="this.select()">
+    <p><a href="${page}" target="_blank" rel="noopener">See what changed on GitHub</a></p>`;
+  const choice = await foundry.applications.api.DialogV2.wait({
+    window: { title: `${TITLE} update available`, icon: "fa-solid fa-feather" },
+    content,
+    buttons: [
+      { action: "copy", label: "Copy manifest URL", icon: "fa-solid fa-copy", default: true },
+      { action: "skip", label: "Skip this version", icon: "fa-solid fa-forward" },
+      { action: "close", label: "Close", icon: "fa-solid fa-xmark" },
+    ],
+    rejectClose: false,
+  }).catch(() => null);
+  if (choice === "copy") {
+    await game.clipboard.copyPlainText(MANIFEST);
+    ui.notifications.info(`${TITLE}: manifest URL copied.`);
+  } else if (choice === "skip") await game.settings.set(ID, "skipVersion", latest);
 }
 
 // Map preview upkeep

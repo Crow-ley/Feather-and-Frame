@@ -431,14 +431,29 @@ header p { flex: 0 1 auto; }
 </div>
 
 <script>
-const RING_SRC = "data:image/webp;base64,__RING__";
+/* Plain ring for the standalone page. Inside Foundry it is swapped for the ring chosen in Foundry's settings. */
+function drawPlainRing() {
+  const c = document.createElement("canvas"); c.width = c.height = 1024; const x = c.getContext("2d");
+  const ring = (r0, r1, fill) => { x.beginPath(); x.arc(512, 512, r1, 0, Math.PI * 2); x.arc(512, 512, r0, 0, Math.PI * 2, true); x.fillStyle = fill; x.fill(); };
+  const bg = x.createRadialGradient(512, 512, 40, 512, 512, 360);
+  bg.addColorStop(0, "#2b2528"); bg.addColorStop(1, "#141113");
+  x.beginPath(); x.arc(512, 512, 372, 0, Math.PI * 2); x.fillStyle = bg; x.fill();
+  const metal = x.createLinearGradient(160, 120, 864, 904);
+  metal.addColorStop(0, "#d8dade"); metal.addColorStop(0.45, "#7d828a"); metal.addColorStop(0.7, "#a9adb3"); metal.addColorStop(1, "#4a4e55");
+  ring(370, 402, metal);
+  ring(341, 370, "#5b7896");
+  ring(336, 342, "#3a3d43");
+  ring(400, 402, "#25272b");
+  return c.toDataURL("image/png");
+}
+let defaultRing = drawPlainRing(), ringBase = 1024;
 const TPL = {
   standard: { cx: 512, cy: 511, r: 342, topk: 0.45, ring: 1, box: [0, 0, 1024] },
   big:      { cx: 512, cy: 511, r: 171, topk: 0.55, ring: 0.5, box: [256, 256, 512] },
 };
 const $ = (id) => document.getElementById(id);
 const view = $("view"), vctx = view.getContext("2d"), stage = $("stage");
-let ring = new Image(); ring.src = RING_SRC; ring.onload = () => draw();
+let ring = new Image(); ring.src = defaultRing; ring.onload = () => draw();
 let items = [], cur = null, mode = "move", brush = 60, pointer = null, dirHandle = null;
 let cam = { s: 1, x: 0, y: 0 }, spaceDown = false, lasso = null, selOp = "new", selBrush = "protect", wandTol = 60;
 const SEL = 2048; // selection resolution across the 1024 token canvas
@@ -454,10 +469,10 @@ $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showG
 $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut; $("bakeRing").checked = prefs.bakeRing;
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
-    ring = im; ringCustom = custom; ringPix = null; ringFrame = makeFrame(im);
+    ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
     $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; draw();
   };
-  im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(RING_SRC, false); } };
+  im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
 }
 // Ring library (IndexedDB)
@@ -491,7 +506,7 @@ function useRing(rec) {
     prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100; prefs.ringFront = rec.front ?? true;
     ringUrl = URL.createObjectURL(rec.blob); loadRing(ringUrl, true);
   } else {
-    prefs.ringId = null; prefs.ringScale = 100; prefs.ringFront = false; loadRing(RING_SRC, false);
+    prefs.ringId = null; prefs.ringScale = 100; prefs.ringFront = false; loadRing(defaultRing, false);
   }
   prefs.ring = true; $("showRing").checked = true;
   applyRingSettings(); savePrefs(); renderLib();
@@ -533,7 +548,7 @@ async function renderLib() {
     }
     grid.append(c);
   };
-  card("Default ring", RING_SRC, !ringRec, null);
+  card(host ? "Foundry ring" : "Default ring", defaultRing, !ringRec, null);
   for (const r of rings) card(r.name, URL.createObjectURL(r.blob), ringRec?.id === r.id, r);
   $("libEmpty").hidden = rings.length > 0;
 }
@@ -560,11 +575,11 @@ function makeFrame(im) {
   if (d[((H >> 1) * W + (W >> 1)) * 4 + 3] <= 60) return null;
   const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
   x.drawImage(im, 0, 0); x.globalCompositeOperation = "destination-out";
-  x.beginPath(); x.arc(W / 2, H / 2, (W * 342) / 793, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(W / 2, H / 2, (W * 342) / ringBase, 0, Math.PI * 2); x.fill();
   return c;
 }
 function ringRect(T) {
-  const rs = 793 * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
+  const rs = ringBase * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
   return [T.cx - rs / 2, T.cy - rh / 2, rs, rh];
 }
 
@@ -1530,7 +1545,20 @@ function setActor(id) {
   $("actorImg").src = a?.img ?? "";
   $("actorImg").style.visibility = a ? "visible" : "hidden";
   host.selected(a?.id ?? "");
+  foundryRing(a?.id ?? "");
   if (mapPrev) setMapPrev(!!a, true);
+}
+/* Ask Foundry for its ring, colored for this actor, and use it as the default ring. */
+let ringAsk = 0;
+async function foundryRing(id) {
+  if (!host?.ring) return;
+  const n = ++ringAsk;
+  let url = null;
+  try { url = await host.ring(id); } catch (e) { console.warn("Feather & Frame | ring", e); }
+  if (!url || n !== ringAsk) return;
+  defaultRing = url;
+  if (!ringRec) loadRing(url, false);
+  renderLib();
 }
 function attachHost(h, actorId) {
   host = h;
