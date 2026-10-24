@@ -18,12 +18,14 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 - Overhang corners let parts of the art sit on top of the ring.
 - Restore and Erase brushes, plus Lasso and Fuzzy select
 - One-click removal for plain backgrounds
+- Uses the ring picked in Foundry's Dynamic Token Ring setting, colored the way the actor's token will look
 - Custom rings, with a saved ring library
 - An option to bake the ring into the image for VTTs without dynamic rings
 - Send to Actor uploads the token, turns on the ring and sets the scale values for you. It can also set the portrait (the original image or another one you pick) and update tokens already placed on scenes.
 - Preview on Map shows your edits on the actor's token in the open scene before you send. Only you see it.
 - Drag tokens from the list next to the one you're editing to compare them.
 - Ctrl+Z undoes brush strokes, moves and scaling.
+- Checks GitHub for new versions. When one is out, the GM sees a notice with the manifest URL the first time they open the window that session.
 - A GM setting lets players make tokens for characters they own. They also need the Upload New Files permission.
 
 ## Usage
