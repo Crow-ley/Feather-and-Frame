@@ -10,7 +10,7 @@ In Foundry's setup screen, open Add-on Modules, click Install Module and paste t
 https://github.com/Crow-ley/feather-and-frame/releases/latest/download/module.json
 ```
 
-It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on the desktop app and on The Forge.
+It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on the desktop. It SHOULD work on forgevtt but I haven't tested as I stopped using that terrible service xd
 
 ## Features
 
