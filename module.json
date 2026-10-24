@@ -1,0 +1,28 @@
+{
+  "id": "feather-and-frame",
+  "title": "Feather & Frame",
+  "description": "Make ring tokens from your character art and send them to an actor. Sets the ring image, token scale and scale correction for you, and can update the portrait.",
+  "version": "0.9.14",
+  "authors": [
+    {
+      "name": "Crowley",
+      "url": "https://github.com/Crow-ley",
+      "discord": ".mordecai"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/ccs.css"
+  ],
+  "url": "https://github.com/Crow-ley/feather-and-frame",
+  "manifest": "https://github.com/Crow-ley/feather-and-frame/releases/latest/download/module.json",
+  "download": "https://github.com/Crow-ley/feather-and-frame/releases/latest/download/feather-and-frame.zip",
+  "bugs": "https://github.com/Crow-ley/feather-and-frame/issues",
+  "readme": "https://github.com/Crow-ley/feather-and-frame#readme"
+}

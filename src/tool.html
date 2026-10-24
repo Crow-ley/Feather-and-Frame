@@ -1,0 +1,1643 @@
+<title>Feather &amp; Frame</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,__FAVICON__">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<style>
+/* Layout: token list | stage | settings. Single column on narrow screens. */
+:root {
+  --bg: #141117;
+  --panel: #1d1922;
+  --raise: #272130;
+  --line: #3a3143;
+  --fg: #ebe5dd;
+  --muted: #a3988f;
+  --brass: #c9a46a;
+  --brass-ink: #1a1408;
+  --blood: #b5473f;
+  --ok: #7fae7a;
+  --display: "IM Fell English SC", Georgia, "Times New Roman", serif;
+  --body: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 var(--body); }
+button, input, select { font: inherit; color: inherit; }
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px 14px; gap: 10px; }
+header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; position: relative; padding-right: 40px; }
+.help-btn { position: absolute; top: 50%; right: 0; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--raise); color: var(--brass); font-weight: 700; cursor: pointer; padding: 0; }
+.help-btn:hover, .help-btn[aria-expanded="true"] { border-color: var(--brass); }
+.help-pop { position: fixed; top: 8px; right: 12px; z-index: 60; width: 290px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--brass); border-radius: 10px; padding: 12px 14px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+.help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.help-head h2 { margin: 0; font: 400 1.1rem/1.2 var(--display); color: var(--brass); }
+.help-pop p { margin: 0 0 10px; font-size: .85rem; color: var(--muted); line-height: 1.4; }
+.help-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--raise); color: var(--text); text-decoration: none; text-align: left; cursor: pointer; font: inherit; }
+.help-link:hover { border-color: var(--brass); }
+.help-link img { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+.help-link span { display: flex; flex-direction: column; min-width: 0; }
+.help-link small { color: var(--muted); font-size: .78rem; }
+h1 { font: 400 1.6rem/1 var(--display); letter-spacing: .02em; margin: 0; color: var(--brass); text-wrap: balance; }
+header p { margin: 0; color: var(--muted); font-size: .9rem; flex: 1 1 260px; min-width: 0; }
+.work { display: grid; grid-template-columns: 230px minmax(0, 1fr) 290px; gap: 12px; min-height: 0; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-height: 0; min-width: 0; }
+.list { display: flex; flex-direction: column; overflow: hidden; }
+.list-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 8px; }
+.label { font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--brass); }
+.items { overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.item { position: relative; display: grid; grid-template-columns: 48px minmax(0,1fr); gap: 8px; align-items: center; padding: 5px 28px 5px 5px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; background: none; text-align: left; width: 100%; }
+.item .x { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 22px; height: 22px; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; opacity: .55; }
+.item:hover .x, .item[aria-current="true"] .x, .item .x:focus-visible { opacity: 1; }
+.item .x:hover { color: var(--fg); border-color: var(--blood); background: color-mix(in srgb, var(--blood) 25%, transparent); }
+.list-opts { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.list-opts select { flex: 1; min-width: 0; padding: 4px 6px; font-size: .85rem; }
+.icon-btn { border: 1px solid var(--line); background: var(--raise); border-radius: 5px; padding: 2px 8px; cursor: pointer; font-size: .8rem; color: var(--muted); }
+.icon-btn:hover { color: var(--fg); border-color: var(--muted); }
+.work.list-hidden { grid-template-columns: 38px minmax(0, 1fr) 290px; }
+.work.list-hidden .list > :not(.list-tab) { display: none !important; }
+.list-tab { display: none; }
+.work.list-hidden .list-tab { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0; height: 100%; border: 0; background: none; cursor: pointer; color: var(--muted); }
+.work.list-hidden .list-tab span { writing-mode: vertical-rl; letter-spacing: .12em; text-transform: uppercase; font-size: .72rem; }
+.work.list-hidden .list-tab:hover { color: var(--fg); }
+.item:hover { background: var(--raise); }
+.item[aria-current="true"] { border-color: var(--brass); background: var(--raise); }
+.item canvas { width: 48px; height: 48px; border-radius: 4px; background: #0d0b0f; }
+.item .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
+.item .st { font-size: .72rem; color: var(--muted); }
+.item .st.saved { color: var(--ok); }
+.stage { position: relative; overflow: hidden;
+  background-color: #0f0d12; background-image: linear-gradient(45deg, #17141b 25%, transparent 25%, transparent 75%, #17141b 75%), linear-gradient(45deg, #17141b 25%, transparent 25%, transparent 75%, #17141b 75%); background-size: 24px 24px; background-position: 0 0, 12px 12px; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
+#view.cross { cursor: crosshair; }
+#view.panning, #view.panning.brush { cursor: move; }
+.zoombar { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; align-items: center; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.zoombar button { border: 0; background: var(--raise); border-radius: 5px; min-width: 30px; height: 28px; cursor: pointer; padding: 0 8px; }
+.zoombar button[aria-pressed="true"] { background: var(--brass); color: #1a1408; font-weight: 700; }
+.item[draggable="true"] { cursor: grab; }
+.tip-wrap { position: relative; display: inline-flex; }
+.tip-wrap:has(> button[hidden]) { display: none; }
+.tip { position: absolute; top: calc(100% + 10px); right: -4px; z-index: 20; width: 250px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--muted); font-size: .8rem; line-height: 1.4; text-align: left; box-shadow: 0 8px 22px rgba(0,0,0,.5); opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .12s, transform .12s, visibility .12s; pointer-events: none; }
+.tip::before { content: ""; position: absolute; top: -6px; right: 22px; width: 10px; height: 10px; background: var(--panel); border-left: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg); }
+.tip-wrap:hover .tip, .tip-wrap:focus-within .tip { opacity: 1; visibility: visible; transform: none; transition-delay: .25s; }
+body.no-hints .tip { display: none; }
+.zoombar output { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); }
+.selbar .seg { background: var(--raise); }
+.selbar { position: absolute; left: 10px; top: 10px; max-width: calc(100% - 200px); display: flex; gap: 6px; flex-wrap: wrap; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--brass); border-radius: 8px; padding: 6px; }
+.selbar .btn { padding: 5px 10px; font-size: .9rem; }
+#view.brush { cursor: none; }
+#view.dragging { cursor: grabbing; }
+.drop { position: absolute; inset: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; border: 2px dashed var(--line); border-radius: 10px; color: var(--muted); padding: 24px; }
+.drop strong { font: 400 1.5rem var(--display); color: var(--fg); }
+.stage.over .drop, .stage.over { outline: 2px solid var(--brass); outline-offset: -2px; }
+.side { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 16px; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 6px 4px; cursor: pointer; white-space: nowrap; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--brass); color: var(--brass-ink); font-weight: 700; }
+.btn { border: 1px solid var(--line); background: var(--raise); padding: 7px 12px; border-radius: 6px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--brass); color: var(--brass-ink); border-color: var(--brass); font-weight: 700; }
+.btn:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.quad { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; width: 112px; height: 112px; flex: none; position: relative; }
+.quad button:nth-child(1) { text-align: left; } 
+.quad button { border: 1px solid var(--line); background: var(--raise); cursor: pointer; font-size: .7rem; color: var(--muted); display: flex; padding: 4px; }
+.quad button:nth-child(1) { align-items: flex-start; justify-content: flex-start; }
+.quad button:nth-child(2) { align-items: flex-start; justify-content: flex-end; }
+.quad button:nth-child(3) { align-items: flex-end; justify-content: flex-start; }
+.quad button:nth-child(4) { align-items: flex-end; justify-content: flex-end; }
+.quad button[aria-pressed="true"] { background: color-mix(in srgb, var(--brass) 35%, var(--raise)); color: var(--fg); border-color: var(--brass); }
+.quad::after { content: ""; position: absolute; inset: 26%; border-radius: 50%; border: 2px solid var(--brass); background: var(--panel); pointer-events: none; }
+.quad-wrap { display: flex; gap: 12px; align-items: center; }
+.hint { font-size: .82rem; color: var(--muted); margin: 0; }
+.no-hints .hint:not(.info) { display: none !important; }
+.group-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.check.small { font-size: .8rem; color: var(--muted); }
+.list-hint { padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
+input[type=range] { width: 100%; accent-color: var(--brass); }
+input[type=text], select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
+.check { display: flex; gap: 8px; align-items: center; font-size: .9rem; }
+.check input { accent-color: var(--brass); }
+kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--raise); border: 1px solid var(--brass); padding: 8px 14px; border-radius: 6px; font-size: .9rem; max-width: calc(100% - 32px); }
+.toast.err { border-color: var(--blood); }
+.nav { display: flex; gap: 6px; }
+.nav .btn { flex: 1; }
+.lib { position: fixed; inset: 0; background: rgba(8,6,10,.72); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.lib-box { background: var(--panel); border: 1px solid var(--brass); border-radius: 10px; width: min(760px, 100%); max-height: min(80vh, 760px); display: flex; flex-direction: column; overflow: hidden; }
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.lib-head h2 { margin: 0; font: 400 1.3rem var(--display); color: var(--brass); }
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 14px; overflow-y: auto; }
+.lib-card { border: 1px solid var(--line); border-radius: 8px; background: var(--raise); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.lib-card[aria-current="true"] { border-color: var(--brass); }
+.lib-card .pic { aspect-ratio: 1; border: 0; padding: 0; cursor: pointer; border-radius: 6px; background-color: #0f0d12; background-size: contain; background-position: center; background-repeat: no-repeat; }
+.lib-card input { font-size: .85rem; padding: 4px 6px; }
+.lib-card .row { justify-content: space-between; }
+.lib-card .btn { padding: 4px 8px; font-size: .82rem; }
+.lib-empty { padding: 0 14px 14px; color: var(--muted); font-size: .9rem; margin: 0; }
+.col { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.col > .pane { flex: 1; }
+.actions { display: flex; gap: 8px; }
+.actions > * { flex: 1; text-align: center; }
+.actions .btn { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+.actor-pick { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
+.actor-pick.over { border-color: var(--brass); background: var(--raise); }
+.actor-pick img { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; flex: none; background: var(--bg); }
+.actor-pick select { flex: 1; min-width: 0; height: 36px; font-size: .95rem; }
+.work.list-hidden .actor-pick { display: none; }
+.send-box { width: min(460px, 100%); }
+.btn.mini { padding: 1px 8px; font-size: 11px; min-height: 0; margin-left: 6px; }
+.send-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
+.send-body .check { justify-content: center; font-size: .95rem; }
+.send-body .hint { margin-bottom: 6px; }
+.send-status { min-height: 1.2em; }
+.send-status.err { color: var(--blood); } .send-status.ok { color: var(--ok); }
+.send-foot { display: flex; justify-content: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
+.send-foot .btn { min-width: 130px; }
+
+/* Text alignment */
+select { text-align: center; text-align-last: center; }
+select option { text-align: center; }
+header { justify-content: center; text-align: center; }
+header p { flex: 0 1 auto; }
+.side, .side .label, .side .hint, .list-head, .list-opts, .list-hint { text-align: center; }
+.side .label { display: block; }
+.side .check, .side .row, .group-head, .list-head, .list-opts, .quad-wrap { justify-content: center; }
+.group-head { gap: 14px; flex-wrap: wrap; }
+.quad-wrap { flex-wrap: wrap; }
+.quad-wrap .hint { flex: 1 1 140px; }
+.lib-card, .lib-card input { text-align: center; }
+.lib-card .row { justify-content: center; }
+@media (max-width: 900px) {
+  html, body { height: auto; }
+  .work { grid-template-columns: 1fr; }
+  .list { max-height: 220px; }
+  .stage { height: 70vh; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <h1>Feather &amp; Frame</h1>
+    <p>Make Foundry ring tokens from your character art.</p>
+    <button class="help-btn" id="helpBtn" aria-label="Help" aria-expanded="false" aria-controls="helpPop" title="Help">?</button>
+    <input id="files" type="file" accept="image/*" multiple hidden>
+  </header>
+
+  <div class="work">
+    <div class="col col-left">
+    <div class="actor-pick" id="actorPick" hidden title="Drag an actor from the Actors sidebar here, or choose one">
+      <img id="actorImg" alt="">
+      <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
+    </div>
+    <section class="pane list" aria-label="Tokens">
+      <button class="list-tab" id="listShow" title="Show the token list"><b>›</b><span>Tokens</span></button>
+      <div class="list-head"><span class="label">Tokens <span id="count">0</span></span><button class="icon-btn" id="listHide" title="Hide the token list">‹ Hide</button></div>
+      <div class="list-opts">
+        <select id="listMode" aria-label="How long to keep this list" title="How long to keep this list">
+          <option value="clear">Clear on Close</option>
+          <option value="session">Keep This Session</option>
+          <option value="keep">Keep Until Removed</option>
+        </select>
+      </div>
+      <p class="hint list-hint">Clear on Close empties the list. Keep This Session survives closing the window. Keep Until Removed survives restarts.</p>
+      <p class="hint list-hint">Drag a token from this list onto the work area to compare it with the one you're editing.</p>
+      <div class="items" id="items"></div>
+      <div style="padding:8px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px">
+        <div class="nav">
+          <button class="btn" id="prev">‹ Previous</button>
+          <button class="btn" id="next">Next ›</button>
+        </div>
+        <button class="btn primary" id="saveAll" disabled>Save All (.zip)</button>
+        <button class="btn" id="pickDir" hidden>Save All to Folder...</button>
+      </div>
+    </section>
+    </div>
+
+    <section class="pane stage" id="stage" aria-label="Token preview">
+      <canvas id="view" hidden></canvas>
+      <div class="zoombar" id="zoombar" hidden>
+        <button id="zoomOut" aria-label="Zoom out">−</button>
+        <output id="zoomPct">100%</output>
+        <button id="zoomIn" aria-label="Zoom in">+</button>
+        <button id="zoomFit">Fit</button>
+        <button id="cmpClear" hidden title="Remove the comparison tokens">Clear Compare</button>
+        <span class="tip-wrap">
+          <button id="mapPrev" hidden aria-pressed="false" aria-describedby="mapPrevTip">Preview on Map</button>
+          <span class="tip" id="mapPrevTip" role="tooltip">Shows your edits on this actor's token in the open scene, with the real ring and lighting. If they have more than one token there, select the one you want on the map. Only you can see the preview, and nothing changes until you send.</span>
+        </span>
+      </div>
+      <div class="selbar" id="selbar" hidden>
+        <button class="btn" id="selKeep">Keep inside</button>
+        <button class="btn" id="selDel">Delete inside</button>
+        <button class="btn" id="selDelOut">Delete outside</button>
+        <button class="btn" id="selInvert">Invert</button>
+        <button class="btn" id="selCancel">Deselect</button>
+        <div class="seg" id="selBrush" title="How Restore and Erase treat the selection">
+          <button data-v="protect" aria-pressed="true">Brushes skip it</button>
+          <button data-v="inside" aria-pressed="false">Only inside</button>
+        </div>
+      </div>
+      <div class="drop" id="drop">
+        <strong>Drop token images here</strong>
+        <span>PNG, WebP or JPG with no background. Drop several at once.</span>
+        <label class="btn" for="files">Choose files</label>
+      </div>
+    </section>
+
+    <div class="col col-right">
+    <div class="actions">
+      <label class="btn primary" for="files">Upload Token Art</label>
+      <button class="btn primary" id="sendActor" hidden>Send to Actor</button>
+    </div>
+    <aside class="pane side" aria-label="Token settings">
+      <div class="group">
+        <div class="group-head">
+          <span class="label">Template</span>
+          <label class="check small"><input type="checkbox" id="showHints" checked> Instruction Text</label>
+        </div>
+        <div class="seg" id="tpl">
+          <button data-v="standard" aria-pressed="true">Standard</button>
+          <button data-v="big" aria-pressed="false">Big Chungus</button>
+        </div>
+        <p class="hint"><strong>Standard</strong>: standard tokens with little overhang.</p>
+        <p class="hint"><strong>Big Chungus</strong>: overhang exceeds the grid square.</p>
+      </div>
+
+      <div class="group">
+        <span class="label">Overhang Regions</span>
+        <div class="quad-wrap">
+          <div class="quad" id="quad">
+            <button data-q="tl" aria-pressed="true" aria-label="Top left">TL</button>
+            <button data-q="tr" aria-pressed="true" aria-label="Top right">TR</button>
+            <button data-q="bl" aria-pressed="false" aria-label="Bottom left">BL</button>
+            <button data-q="br" aria-pressed="false" aria-label="Bottom right">BR</button>
+          </div>
+          <p class="hint">Lit corners let the image spill past the ring and sit on top of it.</p>
+        </div>
+      </div>
+
+      <div class="group">
+        <span class="label">Tool</span>
+        <div class="seg" id="mode">
+          <button data-v="move" aria-pressed="true">Move</button>
+          <button data-v="restore" aria-pressed="false">Restore</button>
+          <button data-v="erase" aria-pressed="false">Erase</button>
+          <button data-v="lasso" aria-pressed="false">Lasso</button>
+          <button data-v="wand" aria-pressed="false">Fuzzy</button>
+        </div>
+        <p class="hint">Move: drag to place, scroll to resize. Restore paints the image back. Erase removes it. Lasso and Fuzzy select areas.</p>
+        <label class="label" for="brush">Brush size <span id="brushVal">60</span></label>
+        <input type="range" id="brush" min="1" max="300" value="60">
+        <p class="hint">Size of the Restore and Erase brushes.</p>
+      </div>
+
+      <div class="group">
+        <div class="group" id="selOpts" hidden>
+          <span class="label">Selection</span>
+          <div class="seg" id="selOp">
+            <button data-v="new" aria-pressed="true">New</button>
+            <button data-v="add" aria-pressed="false">Add</button>
+            <button data-v="sub" aria-pressed="false">Subtract</button>
+          </div>
+          <p class="hint">New replaces the selection. Add and Subtract change it. <kbd>Shift</kbd> and <kbd>Alt</kbd> do the same.</p>
+          <div class="group" id="wandOpts" hidden>
+            <label class="label" for="wandTol">Fuzzy tolerance <span id="wandTolVal">60</span></label>
+            <input type="range" id="wandTol" min="0" max="160" value="60">
+            <p class="hint">Higher grabs a wider range of similar colors.</p>
+          </div>
+          <p class="hint" id="lassoHint">Drag around an area, or click points and click the first one to close.</p>
+          <p class="hint" id="wandHint" hidden>Click a color to select the connected area around it.</p>
+          <p class="hint">Restore and Erase respect the selection.</p>
+        </div>
+        <div class="row">
+          <button class="btn" id="autofit">Reset Image</button>
+          <button class="btn" id="clearStrokes">Remove Edits</button>
+        </div>
+        <p class="hint">Reset Image re-sizes and centers the image. Remove Edits clears all brush and selection edits.</p>
+        <p class="hint"><kbd>Ctrl</kbd>+scroll zooms, <kbd>Space</kbd>+drag pans, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, <kbd>[</kbd> <kbd>]</kbd> size the brush.</p>
+      </div>
+
+      <div class="group">
+        <label class="label" for="zoom">Image Scale</label>
+        <input type="range" id="zoom" min="-3" max="3" step="0.005" value="0">
+        <p class="hint">Makes the image bigger or smaller inside the ring.</p>
+      </div>
+
+      <div class="group">
+        <span class="label">Background</span>
+        <div class="row">
+          <button class="btn" id="bgQuick">Remove Background</button>
+          <button class="btn" id="bgUndo" disabled>Undo</button>
+        </div>
+        <p class="hint">Removes the plain background touching the edges of the image.</p>
+        <label class="label" for="bgTol">Background tolerance <span id="bgTolVal">40</span></label>
+        <input type="range" id="bgTol" min="2" max="120" value="40">
+        <p class="hint">Raise it for uneven or shaded backgrounds. Lower it if parts of the character disappear.</p>
+        <p class="hint info" id="bgStatus"></p>
+      </div>
+
+      <div class="group">
+        <span class="label">Ring and Preview</span>
+        <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
+        <p class="hint">Preview only. The ring is saved only with Bake Ring Into Image.</p>
+        <div class="row">
+          <label class="btn" for="ringFile">Upload Ring...</label>
+          <input id="ringFile" type="file" accept="image/*" hidden>
+          <button class="btn" id="ringReset" hidden>Default Ring</button>
+          <button class="btn" id="ringLib">Saved Rings...</button>
+        </div>
+        <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
+        <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
+        <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
+        <p class="hint">Lines a custom ring up with the image circle.</p>
+        <label class="check"><input type="checkbox" id="ringFront"> Bring Ring to Front</label>
+        <p class="hint">Draws the ring over the image instead of behind it.</p>
+        <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
+        <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
+        <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
+        <p class="hint">Faintly shows the parts of the image that get cut off.</p>
+        <label class="check"><input type="checkbox" id="showBox" checked> Show Grid Box</label>
+        <p class="hint">Outlines the token's grid square.</p>
+        <p class="hint info" id="boxInfo"></p>
+      </div>
+
+      <div class="group">
+        <label class="label" for="outName">File name</label>
+        <input type="text" id="outName" spellcheck="false">
+        <div class="group" style="gap:6px">
+          <select id="size" aria-label="Output size"><option value="auto">Size: from template</option><option value="1024">1024 px</option><option value="2048">2048 px</option></select>
+          <select id="quality" aria-label="WebP quality"><option value="0.9">Quality 90</option><option value="0.95">Quality 95</option><option value="1">Lossless</option><option value="0.8">Quality 80</option></select>
+        </div>
+        <p class="hint">Size comes from the template unless you pick one. Higher quality means sharper, larger files.</p>
+        <label class="check"><input type="checkbox" id="bakeRing"> Bake Ring Into Image</label>
+        <p class="hint">Saves the ring into the image, for VTTs without dynamic rings.</p>
+        <button class="btn primary" id="saveOne" disabled>Save Token</button>
+      </div>
+    </aside>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="help-pop" id="helpPop" hidden role="dialog" aria-labelledby="helpTitle">
+  <div class="help-head"><h2 id="helpTitle">Need help?</h2><button class="icon-btn" id="helpClose" aria-label="Close">×</button></div>
+  <p>If something isn't working, or you have an idea, join my Discord server or send me a DM.</p>
+  <a class="help-link" href="https://discord.gg/HXHdzXR6mC" target="_blank" rel="noopener">
+    <img src="data:image/webp;base64,__DISCORD_SERVER__" alt="">
+    <span><b>Burn Bin Inn</b><small>Join the Discord server</small></span>
+  </a>
+  <button class="help-link" id="helpDm" title="Copy username">
+    <img src="data:image/webp;base64,__DISCORD_USER__" alt="">
+    <span><b>.mordecai</b><small>DM me on Discord (click to copy my username)</small></span>
+  </button>
+</div>
+<div class="lib" id="sendDlg" hidden role="dialog" aria-modal="true" aria-labelledby="sendTitle">
+  <div class="lib-box send-box">
+    <div class="lib-head"><h2 id="sendTitle">Send to Actor</h2></div>
+    <div class="send-body">
+      <label class="check"><input type="checkbox" id="sendPortrait"> Original Image as Portrait</label>
+      <p class="hint">Saves the originally uploaded image as the character sheet portrait.</p>
+      <div class="row" id="sendPortraitRow">
+        <button class="btn" id="sendPickPortrait">Alternative Portrait</button>
+        <input type="file" id="sendPortraitFile" accept="image/*" hidden>
+      </div>
+      <p class="hint info" id="sendPortraitName" hidden><span id="sendPortraitLabel"></span> <button class="btn mini" id="sendPortraitClear" title="Stop using this portrait">Clear</button></p>
+      <p class="hint" id="sendPortraitHint">Pick another image for the portrait, like the mist version. It's used instead of the original image.</p>
+      <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
+      <p class="hint">Also changes copies of this actor already on scenes.</p>
+      <p class="hint info send-status" id="sendStatus"></p>
+    </div>
+    <div class="send-foot">
+      <button class="btn" id="sendCancel">Cancel</button>
+      <button class="btn primary" id="sendGo">Send to Actor</button>
+    </div>
+  </div>
+</div>
+<div class="lib" id="lib" hidden role="dialog" aria-modal="true" aria-labelledby="libTitle">
+  <div class="lib-box">
+    <div class="lib-head">
+      <h2 id="libTitle">Saved rings</h2>
+      <div class="row">
+        <label class="btn" for="ringFile">Upload a ring...</label>
+        <button class="btn" id="libClose">Close</button>
+      </div>
+    </div>
+    <div class="lib-grid" id="libGrid"></div>
+    <p class="lib-empty" id="libEmpty">No saved rings yet. Every ring you upload is saved here with its size and front/behind setting.</p>
+  </div>
+</div>
+
+<script>
+const RING_SRC = "data:image/webp;base64,__RING__";
+const TPL = {
+  standard: { cx: 512, cy: 511, r: 342, topk: 0.45, ring: 1, box: [0, 0, 1024] },
+  big:      { cx: 512, cy: 511, r: 171, topk: 0.55, ring: 0.5, box: [256, 256, 512] },
+};
+const $ = (id) => document.getElementById(id);
+const view = $("view"), vctx = view.getContext("2d"), stage = $("stage");
+let ring = new Image(); ring.src = RING_SRC; ring.onload = () => draw();
+let items = [], cur = null, mode = "move", brush = 60, pointer = null, dirHandle = null;
+let cam = { s: 1, x: 0, y: 0 }, spaceDown = false, lasso = null, selOp = "new", selBrush = "protect", wandTol = 60;
+const SEL = 2048; // selection resolution across the 1024 token canvas
+const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
+const DPR = () => window.devicePixelRatio || 1;
+const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
+const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
+let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true };
+let ringCustom = false, ringPix = null, ringFrame = null;
+try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
+function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
+$("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
+$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut; $("bakeRing").checked = prefs.bakeRing;
+function loadRing(src, custom) {
+  const im = new Image(); im.onload = () => {
+    ring = im; ringCustom = custom; ringPix = null; ringFrame = makeFrame(im);
+    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; draw();
+  };
+  im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(RING_SRC, false); } };
+  im.src = src;
+}
+// Ring library (IndexedDB)
+const RingDB = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      let rq; try { rq = indexedDB.open("ccs-rings", 1); } catch (e) { return rej(e); }
+      rq.onupgradeneeded = () => rq.result.createObjectStore("rings", { keyPath: "id" });
+      rq.onsuccess = () => res((this.db = rq.result)); rq.onerror = () => rej(rq.error);
+    });
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => { const t = db.transaction("rings", mode), st = t.objectStore("rings"); const r = fn(st); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
+  },
+  all() { return this.tx("readonly", (s) => s.getAll()).then((a) => (a || []).sort((x, y) => x.added - y.added)); },
+  get(id) { return this.tx("readonly", (s) => s.get(id)); },
+  put(r) { return this.tx("readwrite", (s) => s.put(r)); },
+  del(id) { return this.tx("readwrite", (s) => s.delete(id)); },
+};
+let ringRec = null, ringUrl = null;
+function applyRingSettings() {
+  $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront;
+}
+function useRing(rec) {
+  ringRec = rec || null;
+  if (ringUrl) { URL.revokeObjectURL(ringUrl); ringUrl = null; }
+  if (rec) {
+    prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100; prefs.ringFront = rec.front ?? true;
+    ringUrl = URL.createObjectURL(rec.blob); loadRing(ringUrl, true);
+  } else {
+    prefs.ringId = null; prefs.ringScale = 100; prefs.ringFront = false; loadRing(RING_SRC, false);
+  }
+  prefs.ring = true; $("showRing").checked = true;
+  applyRingSettings(); savePrefs(); renderLib();
+}
+let ringSaveT = 0;
+function rememberRingSettings() {
+  if (!ringRec) return;
+  ringRec.scale = prefs.ringScale; ringRec.front = prefs.ringFront;
+  clearTimeout(ringSaveT); ringSaveT = setTimeout(() => RingDB.put(ringRec).catch(() => {}), 300);
+}
+async function renderLib() {
+  if ($("lib").hidden) return;
+  let rings = [];
+  try { rings = await RingDB.all(); } catch (e) { toast("This browser can't store rings, so they won't be saved between sessions.", true); }
+  const grid = $("libGrid"); grid.replaceChildren();
+  const card = (name, url, current, rec) => {
+    const c = document.createElement("div"); c.className = "lib-card"; c.setAttribute("aria-current", current);
+    const pic = document.createElement("button"); pic.className = "pic"; pic.style.backgroundImage = `url("${url}")`;
+    pic.title = "Use this ring"; pic.setAttribute("aria-label", "Use " + name);
+    pic.onclick = () => { useRing(rec); $("lib").hidden = true; toast("Using " + name); };
+    c.append(pic);
+    if (rec) {
+      const nm = document.createElement("input"); nm.type = "text"; nm.value = rec.name; nm.setAttribute("aria-label", "Ring name");
+      nm.onchange = () => { rec.name = nm.value.trim() || rec.name; RingDB.put(rec).catch(() => {}); };
+      const row = document.createElement("div"); row.className = "row";
+      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
+      const del = document.createElement("button"); del.className = "btn"; del.textContent = "Remove";
+      del.onclick = async () => {
+        if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm remove"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Remove"; }, 3000); return; }
+        await RingDB.del(rec.id).catch(() => {}); URL.revokeObjectURL(url);
+        if (ringRec?.id === rec.id) useRing(null); else renderLib();
+        toast("Removed " + rec.name);
+      };
+      row.append(use, del); c.append(nm, row);
+    } else {
+      const lbl = document.createElement("div"); lbl.textContent = name; lbl.style.fontSize = ".9rem";
+      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
+      const row = document.createElement("div"); row.className = "row"; row.append(lbl, use); c.append(row);
+    }
+    grid.append(c);
+  };
+  card("Default ring", RING_SRC, !ringRec, null);
+  for (const r of rings) card(r.name, URL.createObjectURL(r.blob), ringRec?.id === r.id, r);
+  $("libEmpty").hidden = rings.length > 0;
+}
+async function addRingFile(f) {
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, front: false, added: Date.now() };
+  try { await RingDB.put(rec); } catch (e) { toast("Ring loaded, but this browser can't save it for next time.", true); }
+  useRing(rec);
+}
+(async () => {
+  try {
+    if (prefs.ringId) { const rec = await RingDB.get(prefs.ringId); if (rec) { useRing(rec); return; } }
+  } catch (e) { /* storage unavailable */ }
+  useRing(null);
+})();
+function ringPixels() {
+  if (ringPix) return ringPix;
+  const W = ring.naturalWidth, H = ring.naturalHeight, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(ring, 0, 0);
+  return (ringPix = { d: x.getImageData(0, 0, W, H).data, W, H });
+}
+/* Frame-only copy of a ring with an opaque center, used when the ring is drawn in front. */
+function makeFrame(im) {
+  const { d, W, H } = ringPixels();
+  if (d[((H >> 1) * W + (W >> 1)) * 4 + 3] <= 60) return null;
+  const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  x.drawImage(im, 0, 0); x.globalCompositeOperation = "destination-out";
+  x.beginPath(); x.arc(W / 2, H / 2, (W * 342) / 793, 0, Math.PI * 2); x.fill();
+  return c;
+}
+function ringRect(T) {
+  const rs = 793 * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
+  return [T.cx - rs / 2, T.cy - rh / 2, rs, rh];
+}
+
+const innerOverhang = () => prefs.ringCut && ringCustom && !prefs.ringFront;
+/* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
+const overC = document.createElement("canvas"), octx = overC.getContext("2d");
+const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
+function drawRingOver(x, it, img, circleOnly) {
+  const T = TPL[it.tpl], tf = x.getTransform(), W = x.canvas.width, H = x.canvas.height;
+  for (const c of [overC, prioC]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "source-over"; octx.clearRect(0, 0, W, H);
+  octx.setTransform(tf); octx.imageSmoothingQuality = "high";
+  octx.save();
+  if (circleOnly) { octx.beginPath(); octx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); octx.clip(); }
+  octx.drawImage(img, ...ringRect(T));
+  octx.restore();
+  pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.globalCompositeOperation = "source-over"; pctx.clearRect(0, 0, W, H);
+  pctx.setTransform(tf); drawMaskShapes(pctx, it, true);
+  pctx.globalCompositeOperation = "destination-in"; pctx.imageSmoothingQuality = "high";
+  pctx.drawImage(it.img, it.ox, it.oy, it.w * it.s, it.h * it.s);
+  pctx.globalCompositeOperation = "source-over";
+  octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "destination-out"; octx.drawImage(prioC, 0, 0);
+  octx.globalCompositeOperation = "source-over";
+  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(overC, 0, 0); x.restore();
+}
+
+function toast(msg, err) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 3200);
+}
+
+// Loading
+function cleanName(n) {
+  let b = n.replace(/\.[^.]+$/, "");
+  b = b.replace(/[\s_-]*(no[\s_-]?blue|no[\s_-]?mist|transparent)$/i, "");
+  return b;
+}
+async function addFiles(list) {
+  const files = [...list].filter((f) => f.type.startsWith("image/") || /\.(webp|png|jpe?g)$/i.test(f.name));
+  for (const f of files) {
+    try {
+      const url = URL.createObjectURL(f);
+      const img = new Image(); img.src = url; await img.decode();
+      const it = { id: Math.random().toString(36).slice(2), name: f.name, file: f, outName: cleanName(f.name), img, w: img.naturalWidth, h: img.naturalHeight,
+        tpl: "standard", keep: { tl: true, tr: true, bl: false, br: false }, strokes: [], s: 1, ox: 0, oy: 0, saved: false };
+      it.small = alphaSample(img);
+      autofit(it);
+      items.push(it);
+      addRow(it);
+      if (!cur) select(it);
+    } catch (e) { toast("Couldn't read " + f.name + ". Try PNG or WebP.", true); }
+  }
+  updateListState(); persistSoon();
+}
+
+// Background removal
+function sourcePixels(it) {
+  const c = document.createElement("canvas"); c.width = it.w; c.height = it.h;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(it.img, 0, 0);
+  return { c, x, data: x.getImageData(0, 0, it.w, it.h) };
+}
+/* Replace the source image with an edited copy of the same size. */
+async function applyEditedImage(it, canvas, label) {
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+  const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
+  (it.bgUndo ??= []).push({ img: it.img, file: it.file });
+  it.origFile ??= it.file;
+  it.img = img; it.file = new File([blob], it.name.replace(/\.[^.]+$/, "") + ".png", { type: "image/png" });
+  it.pix = null; it.small = alphaSample(img);
+  markEdited(it); syncBgButtons(); draw();
+  $("bgStatus").textContent = label;
+}
+function syncBgButtons() { $("bgUndo").disabled = !cur?.bgUndo?.length; $("bgStatus").textContent = ""; }
+/* Removes border-connected pixels close to the median border color; feathers the cut edge by 1px. */
+function quickRemoveBackground(it, tol) {
+  const { c, x, data } = sourcePixels(it), d = data.data, W = it.w, H = it.h, N = W * H;
+  const R = [], G = [], B = [];
+  const border = [];
+  for (let xx = 0; xx < W; xx++) border.push(xx, (H - 1) * W + xx);
+  for (let yy = 1; yy < H - 1; yy++) border.push(yy * W, yy * W + W - 1);
+  for (const i of border) if (d[i * 4 + 3] > 16) { R.push(d[i * 4]); G.push(d[i * 4 + 1]); B.push(d[i * 4 + 2]); }
+  if (R.length < border.length * 0.1) return { removed: 0, already: true };
+  const med = (a) => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+  const br = med(R), bg = med(G), bb = med(B);
+  const near = (i) => d[i * 4 + 3] <= 16 || Math.max(Math.abs(d[i * 4] - br), Math.abs(d[i * 4 + 1] - bg), Math.abs(d[i * 4 + 2] - bb)) <= tol;
+  const rm = new Uint8Array(N), stack = new Int32Array(N); let top = 0;
+  for (const i of border) if (!rm[i] && near(i)) { rm[i] = 1; stack[top++] = i; }
+  while (top) {
+    const i = stack[--top], px = i % W;
+    if (px > 0 && !rm[i - 1] && near(i - 1)) { rm[i - 1] = 1; stack[top++] = i - 1; }
+    if (px < W - 1 && !rm[i + 1] && near(i + 1)) { rm[i + 1] = 1; stack[top++] = i + 1; }
+    if (i >= W && !rm[i - W] && near(i - W)) { rm[i - W] = 1; stack[top++] = i - W; }
+    if (i < N - W && !rm[i + W] && near(i + W)) { rm[i + W] = 1; stack[top++] = i + W; }
+  }
+  let removed = 0;
+  for (let i = 0; i < N; i++) {
+    if (rm[i]) { if (d[i * 4 + 3]) removed++; d[i * 4 + 3] = 0; continue; }
+    const px = i % W;
+    if ((px > 0 && rm[i - 1]) || (px < W - 1 && rm[i + 1]) || (i >= W && rm[i - W]) || (i < N - W && rm[i + W])) d[i * 4 + 3] = d[i * 4 + 3] >> 1;
+  }
+  x.putImageData(data, 0, 0);
+  return { removed, canvas: c };
+}
+$("bgTol").oninput = (e) => { $("bgTolVal").textContent = e.target.value; };
+$("bgQuick").onclick = async () => {
+  if (!cur) return toast("Upload an image first.", true);
+  $("bgQuick").disabled = true; $("bgStatus").textContent = "Removing background...";
+  await new Promise((r) => setTimeout(r, 20));
+  try {
+    const r = quickRemoveBackground(cur, +$("bgTol").value);
+    if (r.already) { $("bgStatus").textContent = "The edges are already transparent."; return; }
+    if (!r.removed) { $("bgStatus").textContent = "Nothing matched the background. Try a higher tolerance."; return; }
+    await applyEditedImage(cur, r.canvas, `Removed ${Math.round((r.removed / (cur.w * cur.h)) * 100)}% of the image as background.`);
+  } finally { $("bgQuick").disabled = false; }
+};
+$("bgUndo").onclick = () => {
+  const prev = cur?.bgUndo?.pop(); if (!prev) return;
+  cur.img = prev.img; cur.file = prev.file; cur.pix = null; cur.small = alphaSample(prev.img);
+  markEdited(cur); syncBgButtons(); draw(); $("bgStatus").textContent = "Background change undone.";
+};
+// Token list persistence
+// Session storage lives on the host page so it survives closing the Foundry window.
+const SESSION = (() => {
+  try { const t = window.parent; if (t && t !== window && t.document) return (t.__ccsSession ??= { items: null }); } catch (e) {}
+  return (window.__ccsSession ??= { items: null });
+})();
+const TokenDB = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      let rq; try { rq = indexedDB.open("ccs-tokens", 1); } catch (e) { return rej(e); }
+      rq.onupgradeneeded = () => rq.result.createObjectStore("tokens", { keyPath: "id" });
+      rq.onsuccess = () => res((this.db = rq.result)); rq.onerror = () => rej(rq.error);
+    });
+  },
+  async replaceAll(list) {
+    const db = await this.open();
+    return new Promise((res, rej) => { const t = db.transaction("tokens", "readwrite"), st = t.objectStore("tokens"); st.clear(); list.forEach((r, i) => st.put({ ...r, order: i })); t.oncomplete = res; t.onerror = () => rej(t.error); });
+  },
+  async all() {
+    const db = await this.open();
+    return new Promise((res, rej) => { const rq = db.transaction("tokens").objectStore("tokens").getAll(); rq.onsuccess = () => res((rq.result || []).sort((a, b) => a.order - b.order)); rq.onerror = () => rej(rq.error); });
+  },
+};
+const listMode = () => prefs.listMode || "clear";
+function snapshot(it) {
+  return { id: it.id, name: it.name, file: it.file, origFile: it.origFile, outName: it.outName, tpl: it.tpl, keep: { ...it.keep }, s: it.s, ox: it.ox, oy: it.oy, base: it.base,
+    size: it.size, saved: it.saved, strokes: it.strokes };
+}
+const clipBlobs = new WeakMap();
+const canvasBlob = (c) => { if (!clipBlobs.has(c)) clipBlobs.set(c, new Promise((r) => c.toBlob(r, "image/png"))); return clipBlobs.get(c); };
+async function serialize(it) {
+  const snap = snapshot(it);
+  snap.strokes = await Promise.all(it.strokes.map(async (st) => {
+    const o = { mode: st.mode, size: st.size, pts: st.pts, fill: st.fill };
+    if (st.clip) o.clip = { invert: st.clip.invert, png: await canvasBlob(st.clip.canvas) };
+    return o;
+  }));
+  return snap;
+}
+async function restore(snap) {
+  const img = new Image(); img.src = URL.createObjectURL(snap.file); await img.decode();
+  const strokes = await Promise.all((snap.strokes || []).map(async (st) => {
+    if (!st.clip || st.clip.canvas) return st;
+    const bm = await createImageBitmap(st.clip.png); const c = document.createElement("canvas"); c.width = c.height = SEL;
+    c.getContext("2d").drawImage(bm, 0, 0, SEL, SEL);
+    return { mode: st.mode, size: st.size, pts: st.pts, fill: st.fill, clip: { invert: st.clip.invert, canvas: c } };
+  }));
+  const it = { ...snap, keep: { ...snap.keep }, strokes, img, w: img.naturalWidth, h: img.naturalHeight, restored: true };
+  it.small = alphaSample(img);
+  return it;
+}
+let persistT = 0;
+function persistSoon() {
+  if (listMode() === "session") SESSION.items = items.map(snapshot);  // instant, so closing the window never loses work
+  clearTimeout(persistT); persistT = setTimeout(persistNow, 700);
+}
+async function persistNow() {
+  clearTimeout(persistT);
+  const m = listMode();
+  if (m === "session") { SESSION.items = items.map(snapshot); return; }
+  SESSION.items = null;
+  try {
+    if (m === "keep") await TokenDB.replaceAll(await Promise.all(items.map(serialize)));
+    else await TokenDB.replaceAll([]);
+  } catch (e) { if (m === "keep") toast("This browser can't store the token list, so it won't be kept.", true); }
+}
+async function loadKeptList() {
+  $("listMode").value = listMode();
+  let snaps = null;
+  if (listMode() === "session") snaps = SESSION.items;
+  else if (listMode() === "keep") { try { snaps = await TokenDB.all(); } catch (e) { snaps = null; } }
+  if (!snaps?.length) return;
+  for (const snap of snaps) {
+    try { const it = await restore(snap); items.push(it); addRow(it); } catch (e) { /* skip */ }
+  }
+  updateListState();
+  if (items.length && !cur) select(items[0]);
+}
+function alphaSample(img) {
+  const k = 420 / Math.max(img.naturalWidth, img.naturalHeight);
+  const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h);
+  for (let i = 0; i < m.length; i++) m[i] = d[i * 4 + 3] > 25 ? 1 : 0;
+  const rowN = new Float64Array(h + 1), rowX = new Float64Array(h + 1);
+  for (let y = 0; y < h; y++) { let n = 0, sx = 0; for (let x2 = 0; x2 < w; x2++) if (m[y * w + x2]) { n++; sx += x2; } rowN[y + 1] = rowN[y] + n; rowX[y + 1] = rowX[y] + sx; }
+  let top = 0, bot = h - 1;
+  while (top < h && rowN[top + 1] - rowN[top] === 0) top++;
+  while (bot > top && rowN[bot + 1] - rowN[bot] === 0) bot--;
+  return { m, w, h, k, rowN, rowX, top, bot };
+}
+
+/* Auto-fit: smallest scale at which the figure fills the lower band of the circle. */
+function autofit(it) {
+  const T = TPL[it.tpl], S = it.small, { m, w, h } = S;
+  if (it.tpl === "big") {
+    // Big template: fit the whole figure into a box ~1.55x the circle.
+    let x0 = w, x1 = 0;
+    for (let y = S.top; y <= S.bot; y++) for (let x = 0; x < w; x++) if (m[y * w + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    const bw = Math.max(1, x1 - x0), bh = Math.max(1, S.bot - S.top);
+    const s = (1.55 * 2 * T.r) / Math.max(bw, bh);
+    it.s = s * S.k; it.base = it.s;
+    it.ox = T.cx - ((x0 + x1) / 2) * s; it.oy = T.cy - ((S.top + S.bot) / 2) * s;
+    return;
+  }
+  const H = Math.max(1, S.bot - S.top);
+  const pts = [];
+  for (let i = 0; i < 48; i++) for (let j = 0; j < 48; j++) {
+    const gx = -1 + (2 * i) / 47, gy = -1 + (2 * j) / 47;
+    if (gx * gx + gy * gy <= 1 && gy > 0.4 && gy < 0.7) pts.push([T.cx + gx * T.r, T.cy + gy * T.r]);
+  }
+  const topT = T.cy - T.r - T.topk * T.r;
+  const place = (s) => {
+    const oy = topT - S.top * s;
+    const y0 = Math.max(0, Math.floor((T.cy - T.r - oy) / s)), y1 = Math.min(h, Math.ceil((T.cy + T.r - oy) / s));
+    const n = S.rowN[y1] - S.rowN[y0], sx = S.rowX[y1] - S.rowX[y0];
+    const mx = n ? sx / n : w / 2;
+    return { ox: T.cx - mx * s, oy };
+  };
+  const base = (2 * T.r) / H;
+  let pick = null, bestC = -1, bestS = base;
+  for (let i = 0; i < 90; i++) {
+    const s = base * 0.5 * Math.pow(16, i / 89);
+    const { ox, oy } = place(s);
+    let hit = 0;
+    for (const [px, py] of pts) {
+      const sx = Math.floor((px - ox) / s), sy = Math.floor((py - oy) / s);
+      if (sx >= 0 && sx < w && sy >= 0 && sy < h && m[sy * w + sx]) hit++;
+    }
+    const c = hit / pts.length;
+    if (c > bestC) { bestC = c; bestS = s; }
+    if (c >= 0.9) { pick = s; break; }
+  }
+  const s = (pick || bestS) * 1.08;
+  const p = place(s);
+  it.s = s * S.k; it.ox = p.ox; it.oy = p.oy; it.base = it.s;
+}
+
+// Rendering
+/* Keep-mask in token units (0..1024); the caller sets the transform. */
+function traceOp(x, st) {
+  x.strokeStyle = x.fillStyle = "#fff";
+  if (st.fill) { x.fillRect(0, 0, 1024, 1024); return; }
+  x.lineWidth = st.size; x.lineCap = x.lineJoin = "round"; x.beginPath();
+  st.pts.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py)));
+  if (st.pts.length === 1) x.lineTo(st.pts[0][0] + 0.01, st.pts[0][1]);
+  x.stroke();
+}
+function drawMaskShapes(x, it, regionsOnly = false) {
+  const T = TPL[it.tpl], tf = x.getTransform(), W = x.canvas.width, H = x.canvas.height;
+  x.save();
+  x.beginPath(); x.rect(0, 0, 1024, 1024); x.clip();
+  x.fillStyle = "#fff";
+  // Single path with 1px overlap avoids antialiasing seams between regions.
+  x.beginPath();
+  const o = 1;
+  if (it.keep.tl) x.rect(-2, -2, T.cx + o + 2, T.cy + o + 2);
+  if (it.keep.tr) x.rect(T.cx - o, -2, 1026 - T.cx + o, T.cy + o + 2);
+  if (it.keep.bl) x.rect(-2, T.cy - o, T.cx + o + 2, 1026 - T.cy + o);
+  if (it.keep.br) x.rect(T.cx - o, T.cy - o, 1026 - T.cx + o, 1026 - T.cy + o);
+  x.fill("nonzero");
+  if (!regionsOnly) { x.beginPath(); x.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); x.fill(); }
+  for (const st of it.strokes) {
+    const op = st.mode === "erase" ? "destination-out" : "source-over";
+    if (!st.clip) { x.globalCompositeOperation = op; traceOp(x, st); continue; }
+    if (tmpC.width !== W || tmpC.height !== H) { tmpC.width = W; tmpC.height = H; }
+    tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.globalCompositeOperation = "source-over"; tctx.clearRect(0, 0, W, H);
+    tctx.setTransform(tf); traceOp(tctx, st);
+    tctx.globalCompositeOperation = st.clip.invert ? "destination-out" : "destination-in";
+    tctx.imageSmoothingEnabled = true; tctx.drawImage(st.clip.canvas, 0, 0, 1024, 1024);
+    x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = op; x.drawImage(tmpC, 0, 0); x.restore();
+  }
+  x.restore();
+}
+function buildMask(it, size) {
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const x = c.getContext("2d"); x.setTransform(size / 1024, 0, 0, size / 1024, 0, 0);
+  drawMaskShapes(x, it);
+  return c;
+}
+function renderToken(it, size) {
+  const k = size / 1024;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const x = c.getContext("2d");
+  x.imageSmoothingQuality = "high";
+  x.drawImage(it.img, it.ox * k, it.oy * k, it.w * it.s * k, it.h * it.s * k);
+  x.globalCompositeOperation = "destination-in";
+  x.drawImage(buildMask(it, size), 0, 0);
+  return c;
+}
+let raf = 0;
+function draw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawNow); }
+function fitView() {
+  const W = view.width, H = view.height; if (!W || !H) return;
+  const s = (Math.min(W, H) / 1024) * 0.92;
+  cam = { s, x: (W - 1024 * s) / 2, y: (H - 1024 * s) / 2 }; draw();
+}
+function sizeView() {
+  const r = stage.getBoundingClientRect(), W = Math.round(r.width * DPR()), H = Math.round(r.height * DPR());
+  if (W === view.width && H === view.height) return;
+  const fresh = !view.width;
+  const oldS = cam.s, oldW = view.width, oldH = view.height;
+  view.width = comp.width = maskC.width = W; view.height = comp.height = maskC.height = H;
+  if (fresh || !oldW) fitView(); else { cam.x += (W - oldW) / 2; cam.y += (H - oldH) / 2; draw(); }
+}
+function zoomAt(f, sx, sy) {
+  const ns = Math.min(Math.max(cam.s * f, 0.05), 60); f = ns / cam.s;
+  cam.x = sx - (sx - cam.x) * f; cam.y = sy - (sy - cam.y) * f; cam.s = ns; draw();
+}
+function drawNow() {
+  vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.clearRect(0, 0, view.width, view.height);
+  if (!cur) return;
+  const T = TPL[cur.tpl], S = cam.s;
+  const fitS = (Math.min(view.width, view.height) / 1024) * 0.92;
+  $("zoomPct").textContent = Math.round((S / fitS) * 100) + "%";
+  const toCam = (x) => x.setTransform(S, 0, 0, S, cam.x, cam.y);
+  toCam(vctx);
+  vctx.imageSmoothingQuality = "high";
+  vctx.imageSmoothingEnabled = S * cur.s < 3;
+  drawCompare(T);
+  if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
+  const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
+  if (ringOn && (!prefs.ringFront || ringFrame)) vctx.drawImage(ring, ...ringRect(T));
+  // Token layer
+  cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
+  toCam(cctx); cctx.imageSmoothingQuality = "high"; cctx.imageSmoothingEnabled = S * cur.s < 3;
+  cctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s);
+  mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.clearRect(0, 0, maskC.width, maskC.height);
+  toCam(mctx); drawMaskShapes(mctx, cur);
+  cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskC, 0, 0); cctx.globalCompositeOperation = "source-over";
+  vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.drawImage(comp, 0, 0); toCam(vctx);
+  if (ringOn && prefs.ringFront) drawRingOver(vctx, cur, ringFrame || ring, false);
+  if (ringOn && innerOverhang()) drawRingOver(vctx, cur, ringFrame || ring, true);
+  if (!prefs.ring) { vctx.strokeStyle = "rgba(201,164,106,.7)"; vctx.lineWidth = 2 / S * DPR(); vctx.beginPath(); vctx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); vctx.stroke(); }
+  if (prefs.box) drawBox(T);
+  drawCompareUi(T);
+  drawSel();
+  if (pointer && (mode === "restore" || mode === "erase") && !spaceDown) {
+    vctx.strokeStyle = mode === "erase" ? "#e0675d" : "#9fd39a"; vctx.lineWidth = 1.5 * DPR() / S;
+    vctx.beginPath(); vctx.arc(pointer.x, pointer.y, Math.max(brush / 2, 0.5), 0, Math.PI * 2); vctx.stroke();
+  }
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  scheduleSide();
+  schedulePreview();
+}
+let sideT = 0;
+function scheduleSide() { clearTimeout(sideT); sideT = setTimeout(() => { if (cur) { boxInfo(TPL[cur.tpl]); thumb(cur); } }, 120); }
+function drawSel() {
+  const S = cam.s, u = DPR() / S;
+  if (cur.sel) {
+    vctx.save(); vctx.imageSmoothingEnabled = false;
+    vctx.drawImage(cur.sel.tint, 0, 0, 1024, 1024);
+    vctx.drawImage(cur.sel.edge, 0, 0, 1024, 1024);
+    vctx.restore();
+  }
+  if (!lasso || !lasso.pts.length) return;
+  vctx.beginPath();
+  lasso.pts.forEach(([x, y], i) => (i ? vctx.lineTo(x, y) : vctx.moveTo(x, y)));
+  if (pointer) vctx.lineTo(pointer.x, pointer.y);
+  vctx.lineWidth = 1.5 * u; vctx.setLineDash([]); vctx.strokeStyle = "#000"; vctx.stroke();
+  vctx.setLineDash([6 * u, 4 * u]); vctx.strokeStyle = "#f2e6c9"; vctx.stroke(); vctx.setLineDash([]);
+  const [x0, y0] = lasso.pts[0]; vctx.beginPath(); vctx.arc(x0, y0, 5 * u, 0, Math.PI * 2); vctx.fillStyle = "#c9a46a"; vctx.fill();
+}
+// Selection
+function newSelection(op, paint) {
+  const c = document.createElement("canvas"); c.width = c.height = SEL;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  if (op !== "new" && cur.sel) x.drawImage(cur.sel.canvas, 0, 0);
+  x.globalCompositeOperation = op === "sub" ? "destination-out" : "source-over";
+  x.setTransform(SEL / 1024, 0, 0, SEL / 1024, 0, 0); x.fillStyle = "#fff";
+  paint(x);
+  setSelection(c);
+}
+function setSelection(c) {
+  const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, SEL, SEL).data;
+  const tint = new ImageData(SEL, SEL), edge = new ImageData(SEL, SEL), t = tint.data, e = edge.data;
+  let any = false;
+  for (let y = 0; y < SEL; y++) for (let x = 0; x < SEL; x++) {
+    const i = y * SEL + x, a = d[i * 4 + 3] > 127;
+    if (!a) continue; any = true;
+    t[i * 4] = 80; t[i * 4 + 1] = 170; t[i * 4 + 2] = 255; t[i * 4 + 3] = 85;
+    const nb = (xx, yy) => xx < 0 || yy < 0 || xx >= SEL || yy >= SEL || d[(yy * SEL + xx) * 4 + 3] <= 127;
+    if (nb(x - 1, y) || nb(x + 1, y) || nb(x, y - 1) || nb(x, y + 1)) { const k = (x + y) & 4 ? 255 : 0; e[i * 4] = e[i * 4 + 1] = e[i * 4 + 2] = k; e[i * 4 + 3] = 255; }
+  }
+  if (!any) { cur.sel = null; } else {
+    const mk = (img) => { const k = document.createElement("canvas"); k.width = k.height = SEL; k.getContext("2d").putImageData(img, 0, 0); return k; };
+    cur.sel = { canvas: c, tint: mk(tint), edge: mk(edge) };
+  }
+  $("selbar").hidden = !cur.sel; draw();
+}
+function clearSelection() { if (cur) cur.sel = null; lasso = null; $("selbar").hidden = true; draw(); }
+function invertSelection() {
+  if (!cur?.sel) return;
+  const c = document.createElement("canvas"); c.width = c.height = SEL; const x = c.getContext("2d");
+  x.fillStyle = "#fff"; x.fillRect(0, 0, SEL, SEL); x.globalCompositeOperation = "destination-out"; x.drawImage(cur.sel.canvas, 0, 0);
+  setSelection(c);
+}
+function opFor(e) { return e.shiftKey ? "add" : e.altKey ? "sub" : selOp; }
+function finishLasso() {
+  const L = lasso; lasso = null;
+  if (!L || L.pts.length < 3) { draw(); return; }
+  newSelection(L.op, (x) => { x.beginPath(); L.pts.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py))); x.closePath(); x.fill(); });
+}
+/* Morphological close (dilate, then erode). */
+function closeHoles(o, W, H, r) {
+  const N = W * H; let m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = o[i * 4 + 3] ? 1 : 0;
+  const pass = (src, dilate) => {
+    const h = new Uint8Array(N), out = new Uint8Array(N), want = dilate ? 1 : 0;
+    for (let y = 0; y < H; y++) { let last = -1e9; const row = y * W;
+      for (let x = 0; x < W; x++) { if (src[row + x] === want) last = x; h[row + x] = x - last <= r ? want : 1 - want; }
+      last = 1e9; for (let x = W - 1; x >= 0; x--) { if (src[row + x] === want) last = x; if (last - x <= r) h[row + x] = want; } }
+    for (let x = 0; x < W; x++) { let last = -1e9;
+      for (let y = 0; y < H; y++) { if (h[y * W + x] === want) last = y; out[y * W + x] = y - last <= r ? want : 1 - want; }
+      last = 1e9; for (let y = H - 1; y >= 0; y--) { if (h[y * W + x] === want) last = y; if (last - y <= r) out[y * W + x] = want; } }
+    return out;
+  };
+  m = pass(pass(m, true), false);
+  for (let i = 0; i < N; i++) { const v = m[i] ? 255 : 0; o[i * 4] = o[i * 4 + 1] = o[i * 4 + 2] = o[i * 4 + 3] = v; }
+}
+/* Fuzzy select: flood fill from the clicked pixel. */
+function fuzzySelect(p, op) {
+  const it = cur;
+  let d, W, H, rect;
+  {
+    if (!it.pix) {
+      const c = document.createElement("canvas"); c.width = it.w; c.height = it.h;
+      const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(it.img, 0, 0); it.pix = x.getImageData(0, 0, it.w, it.h).data;
+    }
+    d = it.pix; W = it.w; H = it.h; rect = [it.ox, it.oy, it.w * it.s, it.h * it.s];
+  }
+  const sx = Math.floor(((p.x - rect[0]) / rect[2]) * W), sy = Math.floor(((p.y - rect[1]) / rect[3]) * H);
+  if (sx < 0 || sy < 0 || sx >= W || sy >= H) { toast("Click on the image to fuzzy select.", true); return; }
+  const N = W * H, s0 = (sy * W + sx) * 4, tol = wandTol;
+  const r0 = d[s0], g0 = d[s0 + 1], b0 = d[s0 + 2], a0 = d[s0 + 3];
+  const ok = (i) => { const k = i * 4, a = d[k + 3]; if (Math.abs(a - a0) > tol) return false; if (a0 < 16 && a < 16) return true;
+    return Math.abs(d[k] - r0) <= tol && Math.abs(d[k + 1] - g0) <= tol && Math.abs(d[k + 2] - b0) <= tol; };
+  const out = new ImageData(W, H), o = out.data, seen = new Uint8Array(N), stack = new Int32Array(N);
+  let top = 0; stack[top++] = sy * W + sx; seen[sy * W + sx] = 1;
+  while (top) {
+    const i = stack[--top]; o[i * 4 + 3] = 255; o[i * 4] = o[i * 4 + 1] = o[i * 4 + 2] = 255;
+    const x = i % W;
+    if (x > 0 && !seen[i - 1] && ok(i - 1)) { seen[i - 1] = 1; stack[top++] = i - 1; }
+    if (x < W - 1 && !seen[i + 1] && ok(i + 1)) { seen[i + 1] = 1; stack[top++] = i + 1; }
+    if (i >= W && !seen[i - W] && ok(i - W)) { seen[i - W] = 1; stack[top++] = i - W; }
+    if (i < N - W && !seen[i + W] && ok(i + W)) { seen[i + W] = 1; stack[top++] = i + W; }
+  }
+  closeHoles(o, W, H, Math.max(1, Math.round(Math.max(W, H) / 600)));
+  const mc = document.createElement("canvas"); mc.width = W; mc.height = H; mc.getContext("2d").putImageData(out, 0, 0);
+  newSelection(op, (x) => { x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(mc, ...rect); });
+}
+/* Grid box overlay. */
+function drawBox(T) {
+  const [bx, by, bs] = T.box;
+  const u = DPR() / cam.s;
+  vctx.save();
+  if (!compare.length && !cmpHover) {
+    vctx.fillStyle = "rgba(0,0,0,.35)";
+    vctx.beginPath(); vctx.rect(0, 0, 1024, 1024); vctx.rect(bx, by, bs, bs); vctx.fill("evenodd");
+  }
+  vctx.setLineDash([]); vctx.lineWidth = 4 * u; vctx.strokeStyle = "#000"; vctx.strokeRect(bx, by, bs, bs);
+  vctx.setLineDash([10 * u, 7 * u]); vctx.lineWidth = 1.5 * u; vctx.strokeStyle = "rgba(235,229,221,.85)"; vctx.strokeRect(bx, by, bs, bs);
+  vctx.restore();
+}
+let lastInfo = "";
+function boxInfo(T) {
+  const c = renderToken(cur, 256), d = c.getContext("2d").getImageData(0, 0, 256, 256).data;
+  const [bx, by, bs] = T.box.map((v) => v / 4);
+  let L = 0, R = 0, U = 0, D = 0;
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+    if (d[(y * 256 + x) * 4 + 3] < 30) continue;
+    L = Math.max(L, bx - x); R = Math.max(R, x - (bx + bs)); U = Math.max(U, by - y); D = Math.max(D, y - (by + bs));
+  }
+  const pct = (v) => Math.round((v / bs) * 100);
+  const parts = [["up", U], ["left", L], ["right", R], ["down", D]].filter(([, v]) => v > 0).map(([k, v]) => `${pct(v)}% ${k}`);
+  const txt = T.box[2] === 1024 ? "Standard tokens always fit the grid box."
+    : parts.length ? `Spills past the grid box: ${parts.join(", ")}.` : "Fits inside the grid box.";
+  if (txt !== lastInfo) { $("boxInfo").textContent = txt; lastInfo = txt; }
+}
+function thumb(it) {
+  const c = document.querySelector(`[data-id="${it.id}"] canvas`); if (!c) return;
+  const x = c.getContext("2d"); x.clearRect(0, 0, 96, 96);
+  x.drawImage(renderToken(it, 192), 0, 0, 96, 96);
+}
+
+// List
+function addRow(it) {
+  const b = document.createElement("div");
+  b.className = "item"; b.dataset.id = it.id; b.tabIndex = 0; b.setAttribute("role", "button");
+  b.innerHTML = `<canvas width="96" height="96"></canvas><span style="min-width:0"><div class="nm"></div><div class="st"></div></span><button class="x" title="Remove from list" aria-label="Remove">×</button>`;
+  b.querySelector(".nm").textContent = it.outName;
+  const st = b.querySelector(".st");
+  st.textContent = it.saved ? "Saved" : it.restored ? "Restored" : "Auto-fit"; if (it.saved) st.classList.add("saved");
+  b.onclick = (e) => { if (!e.target.closest(".x")) select(it); };
+  b.draggable = true;
+  b.ondragstart = (e) => { e.dataTransfer.setData(CMP_TYPE, it.id); e.dataTransfer.effectAllowed = "copy"; };
+  b.onkeydown = (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); select(it); } };
+  b.querySelector(".x").onclick = (e) => { e.stopPropagation(); removeItem(it); };
+  $("items").appendChild(b);
+  thumb(it);
+}
+function updateListState() {
+  $("count").textContent = items.length;
+  $("saveAll").disabled = !items.length;
+  if (window.showDirectoryPicker && window.self === window.top) $("pickDir").hidden = !items.length;
+}
+function removeItem(it) {
+  const i = items.indexOf(it); if (i < 0) return;
+  items.splice(i, 1);
+  document.querySelector(`[data-id="${it.id}"]`)?.remove();
+  setCompare(compare.filter((c) => c.id !== it.id));
+  if (cur === it) {
+    const next = items[i] || items[i - 1];
+    if (next) select(next);
+    else {
+      cur = null; lasso = null;
+      view.hidden = true; $("drop").hidden = false; $("zoombar").hidden = true; $("selbar").hidden = true; $("saveOne").disabled = true;
+    }
+  }
+  updateListState(); persistSoon();
+}
+function markEdited(it) {
+  it.saved = false; persistSoon();
+  const st = document.querySelector(`[data-id="${it.id}"] .st`);
+  if (st) { st.textContent = "Adjusted"; st.className = "st"; }
+}
+function select(it) {
+  cur = it;
+  document.querySelectorAll(".item").forEach((e) => e.setAttribute("aria-current", e.dataset.id === it.id));
+  document.querySelector(`[data-id="${it.id}"]`)?.scrollIntoView({ block: "nearest" });
+  view.hidden = false; $("drop").hidden = true; $("zoombar").hidden = false; $("saveOne").disabled = false;
+  lasso = null; $("selbar").hidden = !it.sel; syncBgButtons();
+  syncControls(); sizeView(); fitView();
+}
+function syncControls() {
+  if (!cur) return;
+  setSeg("tpl", cur.tpl);
+  document.querySelectorAll("#quad button").forEach((b) => b.setAttribute("aria-pressed", !!cur.keep[b.dataset.q]));
+  $("outName").value = cur.outName;
+  $("size").value = cur.size || "auto";
+  $("size").options[0].textContent = "Size: " + (cur.tpl === "big" ? 2048 : 1024) + " px (template)";
+  $("zoom").value = Math.log2(cur.s / cur.base);
+}
+function setSeg(id, v) { document.querySelectorAll(`#${id} button`).forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === v)); }
+
+// Controls
+$("files").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
+const applyHints = () => {
+  document.body.classList.toggle("no-hints", prefs.hints === false); $("showHints").checked = prefs.hints !== false;
+  try { window.frameElement?.closest(".ccs-wrap")?.classList.toggle("no-hints", prefs.hints === false); } catch (e) { /* standalone */ }
+};
+$("showHints").onchange = (e) => { prefs.hints = e.target.checked; savePrefs(); applyHints(); };
+applyHints();
+const setListHidden = (h) => { document.querySelector(".work").classList.toggle("list-hidden", h); prefs.listHidden = h; savePrefs(); if (!view.hidden) requestAnimationFrame(() => { sizeView(); draw(); }); };
+$("listHide").onclick = () => setListHidden(true);
+$("listShow").onclick = () => setListHidden(false);
+if (prefs.listHidden) document.querySelector(".work").classList.add("list-hidden");
+$("listMode").onchange = (e) => {
+  prefs.listMode = e.target.value; savePrefs(); persistNow();
+  toast({ clear: "The list will clear when the tool closes.", session: "The list is kept until Foundry or the app is reloaded.", keep: "The list is kept until you remove tokens." }[prefs.listMode]);
+};
+window.addEventListener("pagehide", () => { if (listMode() === "session") SESSION.items = items.map(snapshot); });
+const isCmpDrag = (e) => [...(e.dataTransfer?.types || [])].includes(CMP_TYPE);
+["dragenter", "dragover"].forEach((ev) => stage.addEventListener(ev, (e) => {
+  e.preventDefault();
+  if (isCmpDrag(e)) { if (cur) { cmpHover = cmpCell(toTok(e)); draw(); } return; }
+  stage.classList.add("over");
+}));
+["dragleave", "drop"].forEach((ev) => stage.addEventListener(ev, (e) => {
+  e.preventDefault(); stage.classList.remove("over");
+  if (cmpHover && (ev === "drop" || !stage.contains(e.relatedTarget))) { cmpHover = null; draw(); }
+}));
+stage.addEventListener("drop", (e) => {
+  const id = e.dataTransfer.getData(CMP_TYPE);
+  if (id) return dropCompare(id, toTok(e));
+  addFiles(e.dataTransfer.files);
+});
+document.addEventListener("paste", (e) => { const f = [...(e.clipboardData?.files || [])]; if (f.length) addFiles(f); });
+
+$("tpl").onclick = (e) => {
+  const v = e.target.dataset?.v; if (!v || !cur) return;
+  cur.tpl = v; cur.strokes = []; cur.sel = null; $("selbar").hidden = true; autofit(cur); markEdited(cur); syncControls(); draw();
+};
+$("quad").onclick = (e) => {
+  const q = e.target.dataset?.q; if (!q || !cur) return;
+  cur.keep[q] = !cur.keep[q]; markEdited(cur); syncControls(); draw();
+};
+$("mode").onclick = (e) => {
+  const v = e.target.dataset?.v; if (!v) return;
+  mode = v; setSeg("mode", v); view.classList.toggle("brush", v === "restore" || v === "erase"); view.classList.toggle("cross", v === "lasso" || v === "wand");
+  if (v !== "lasso") lasso = null;
+  $("selOpts").hidden = v !== "lasso" && v !== "wand";
+  $("wandOpts").hidden = $("wandHint").hidden = v !== "wand";
+  $("lassoHint").hidden = v !== "lasso";
+  draw();
+};
+$("brush").oninput = (e) => { brush = +e.target.value; $("brushVal").textContent = brush; draw(); };
+$("autofit").onclick = () => { if (!cur) return; recXform(cur); autofit(cur); markEdited(cur); syncControls(); draw(); };
+$("clearStrokes").onclick = () => { if (!cur) return; if (cur.strokes.length) hist(cur).push({ t: "clear", strokes: cur.strokes }); cur.strokes = []; markEdited(cur); draw(); };
+$("zoomIn").onclick = () => zoomAt(1.4, view.width / 2, view.height / 2);
+$("zoomOut").onclick = () => zoomAt(1 / 1.4, view.width / 2, view.height / 2);
+$("zoomFit").onclick = fitView;
+new ResizeObserver(() => { if (!view.hidden) sizeView(); }).observe(stage);
+/* Undo history: brush strokes, moves and scaling, newest last. */
+const hist = (it) => (it.hist ??= []);
+function recXform(it) { hist(it).push({ t: "x", s: it.s, ox: it.ox, oy: it.oy }); }
+let wheelRecAt = 0, zoomRec = false;
+function undo() {
+  if (lasso) { lasso = null; draw(); return; }
+  if (!cur) return;
+  const h = cur.hist?.pop();
+  if (!h) { if (cur.strokes.length) { cur.strokes.pop(); markEdited(cur); draw(); } return; }
+  if (h.t === "x") { cur.s = h.s; cur.ox = h.ox; cur.oy = h.oy; syncControls(); }
+  else if (h.t === "s") cur.strokes.pop();
+  else if (h.t === "clear") cur.strokes = h.strokes;
+  markEdited(cur); persistSoon(); draw();
+}
+function applySel(kind) {
+  if (!cur?.sel) return;
+  cur.strokes.push({ mode: kind === "keep" ? "restore" : "erase", fill: true, clip: { canvas: cur.sel.canvas, invert: kind === "out" } });
+  hist(cur).push({ t: "s" });
+  markEdited(cur); draw();
+}
+$("selKeep").onclick = () => applySel("keep");
+$("selDel").onclick = () => applySel("in");
+$("selDelOut").onclick = () => applySel("out");
+$("selInvert").onclick = invertSelection;
+$("selOp").onclick = (e) => { const v = e.target.dataset?.v; if (!v) return; selOp = v; setSeg("selOp", v); };
+$("selBrush").onclick = (e) => { const v = e.target.dataset?.v; if (!v) return; selBrush = v; setSeg("selBrush", v); };
+$("wandTol").oninput = (e) => { wandTol = +e.target.value; $("wandTolVal").textContent = wandTol; };
+$("selCancel").onclick = clearSelection;
+$("zoom").oninput = (e) => {
+  if (!cur) return;
+  if (!zoomRec) { recXform(cur); zoomRec = true; }
+  const T = TPL[cur.tpl], ns = cur.base * Math.pow(2, +e.target.value), f = ns / cur.s;
+  cur.ox = T.cx - (T.cx - cur.ox) * f; cur.oy = T.cy - (T.cy - cur.oy) * f; cur.s = ns; markEdited(cur); draw();
+};
+$("zoom").onchange = () => { zoomRec = false; persistSoon(); };
+$("showRing").onchange = (e) => { prefs.ring = e.target.checked; savePrefs(); draw(); };
+$("ringScale").oninput = (e) => { prefs.ringScale = +e.target.value; $("ringScaleVal").textContent = prefs.ringScale + "%"; savePrefs(); rememberRingSettings(); draw(); };
+$("ringFront").onchange = (e) => { prefs.ringFront = e.target.checked; savePrefs(); rememberRingSettings(); draw(); };
+$("bakeRing").onchange = (e) => { prefs.bakeRing = e.target.checked; savePrefs(); schedulePreview(); };
+$("ringCut").onchange = (e) => { prefs.ringCut = e.target.checked; savePrefs(); draw(); };
+$("ringFile").onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
+};
+$("ringReset").onclick = () => useRing(null);
+$("ringLib").onclick = () => { $("lib").hidden = false; renderLib(); };
+$("libClose").onclick = () => { $("lib").hidden = true; };
+$("lib").addEventListener("click", (e) => { if (e.target === $("lib")) $("lib").hidden = true; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("lib").hidden) { $("lib").hidden = true; e.stopImmediatePropagation(); } }, true);
+$("showGhost").onchange = (e) => { prefs.ghost = e.target.checked; savePrefs(); draw(); };
+$("size").onchange = (e) => { if (!cur) return; cur.size = e.target.value; markEdited(cur); };
+$("showBox").onchange = (e) => { prefs.box = e.target.checked; savePrefs(); draw(); };
+$("quality").onchange = (e) => { prefs.quality = e.target.value; savePrefs(); };
+$("outName").oninput = (e) => {
+  if (!cur) return; cur.outName = e.target.value.trim() || cleanName(cur.name);
+  document.querySelector(`[data-id="${cur.id}"] .nm`).textContent = cur.outName;
+  persistSoon();
+};
+function step(d) { if (!cur) return; const i = items.indexOf(cur); const n = items[i + d]; if (n) select(n); }
+$("prev").onclick = () => step(-1);
+$("next").onclick = () => step(1);
+
+function toTok(e) {
+  const r = view.getBoundingClientRect(), d = DPR();
+  const sx = (e.clientX - r.left) * d, sy = (e.clientY - r.top) * d;
+  return { sx, sy, x: (sx - cam.x) / cam.s, y: (sy - cam.y) / cam.s };
+}
+let drag = null;
+view.addEventListener("contextmenu", (e) => e.preventDefault());
+view.addEventListener("pointerdown", (e) => {
+  if (!cur) return;
+  const p = toTok(e);
+  const hit = cmpHits.find((h) => Math.hypot(p.sx - h.sx, p.sy - h.sy) <= h.r);
+  if (hit && e.button === 0) { setCompare(compare.filter((c) => c !== hit.slot)); return; }
+  view.setPointerCapture(e.pointerId);
+  if (spaceDown || e.button === 1) { drag = { kind: "pan", sx: p.sx, sy: p.sy }; view.classList.add("panning"); return; }
+  if (mode === "move" || e.button === 2) { recXform(cur); drag = { kind: "move", x: p.x, y: p.y, ox: cur.ox, oy: cur.oy }; view.classList.add("dragging"); }
+  else if (mode === "lasso") {
+    if (lasso) {
+      const [x0, y0] = lasso.pts[0];
+      if (lasso.pts.length >= 3 && Math.hypot((x0 - p.x) * cam.s, (y0 - p.y) * cam.s) < 10 * DPR()) { finishLasso(); return; }
+      lasso.pts.push([p.x, p.y]); drag = { kind: "lasso", moved: false };
+    } else { lasso = { pts: [[p.x, p.y]], op: opFor(e) }; drag = { kind: "lasso", moved: false }; }
+  }
+  else if (mode === "wand") { fuzzySelect(p, opFor(e)); return; }
+  else {
+    const st = { mode, size: brush, pts: [[p.x, p.y]] };
+    if (cur.sel) st.clip = { canvas: cur.sel.canvas, invert: selBrush === "protect" };
+    cur.strokes.push(st); hist(cur).push({ t: "s" }); drag = { kind: "paint", st }; markEdited(cur);
+  }
+  draw();
+});
+view.addEventListener("pointermove", (e) => {
+  const p = toTok(e); pointer = p;
+  if (drag?.kind === "pan") { cam.x += p.sx - drag.sx; cam.y += p.sy - drag.sy; drag.sx = p.sx; drag.sy = p.sy; }
+  else if (drag?.kind === "move") { cur.ox += p.x - drag.x; cur.oy += p.y - drag.y; drag.x = p.x; drag.y = p.y; markEdited(cur); }
+  else if (drag?.kind === "paint") drag.st.pts.push([p.x, p.y]);
+  else if (drag?.kind === "lasso") {
+    const [lx, ly] = lasso.pts[lasso.pts.length - 1];
+    if (Math.hypot((lx - p.x) * cam.s, (ly - p.y) * cam.s) > 3 * DPR()) { lasso.pts.push([p.x, p.y]); drag.moved = true; }
+  }
+  draw();
+});
+const endDrag = () => {
+  if (drag && cur) persistSoon();
+  // A click without movement isn't worth an undo step.
+  if (drag?.kind === "move" && cur && cur.ox === drag.ox && cur.oy === drag.oy) cur.hist?.pop();
+  if (drag?.kind === "lasso" && drag.moved && lasso && lasso.pts.length > 8) finishLasso();
+  drag = null; view.classList.remove("dragging", "panning"); draw();
+};
+view.addEventListener("pointerup", endDrag);
+view.addEventListener("pointercancel", endDrag);
+view.addEventListener("pointerleave", () => { pointer = null; draw(); });
+view.addEventListener("dblclick", () => { if (lasso) { lasso.pts.pop(); finishLasso(); } });
+view.addEventListener("wheel", (e) => {
+  if (!cur) return; e.preventDefault();
+  const p = toTok(e), f = Math.exp(-e.deltaY * 0.0015);
+  if (mode === "move" && !e.ctrlKey && !e.metaKey) {
+    // One undo step per burst of scrolling.
+    if (performance.now() - wheelRecAt > 500) recXform(cur);
+    wheelRecAt = performance.now();
+    cur.ox = p.x - (p.x - cur.ox) * f; cur.oy = p.y - (p.y - cur.oy) * f; cur.s *= f;
+    markEdited(cur); syncControls(); draw();
+  } else zoomAt(f, p.sx, p.sy);
+}, { passive: false });
+function setBrush(v) { brush = Math.round(Math.min(300, Math.max(1, v))); $("brush").value = brush; $("brushVal").textContent = brush; draw(); }
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input[type=text], select")) return;
+  if (e.code === "Space") { if (!spaceDown) { spaceDown = true; view.classList.add("panning"); draw(); } e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { undo(); e.preventDefault(); return; }
+  if (e.key === "Escape") { if (lasso) { lasso = null; draw(); } else clearSelection(); }
+  if (e.key === "Enter" && lasso) finishLasso();
+  if ((e.key === "Delete" || e.key === "Backspace") && cur?.sel) { applySel("in"); e.preventDefault(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") { clearSelection(); e.preventDefault(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") { invertSelection(); e.preventDefault(); }
+  if (e.key === "PageDown") step(1);
+  if (e.key === "PageUp") step(-1);
+  if (e.key === "[") setBrush(brush > 20 ? brush * 0.85 : brush - 1);
+  if (e.key === "]") setBrush(brush >= 20 ? brush * 1.15 : brush + 1);
+  if (e.key === "=" || e.key === "+") zoomAt(1.4, view.width / 2, view.height / 2);
+  if (e.key === "-") zoomAt(1 / 1.4, view.width / 2, view.height / 2);
+  if (e.key === "0") fitView();
+});
+document.addEventListener("keyup", (e) => { if (e.code === "Space") { spaceDown = false; view.classList.remove("panning"); draw(); } });
+
+// Saving
+/* Zip writer (store only). */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(d) { let c = 0xffffffff; for (let i = 0; i < d.length; i++) c = CRC[(c ^ d[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  const now = new Date(), dt = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff,
+    dd = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), n = f.data.length;
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, dt, true); h.setUint16(12, dd, true); h.setUint32(14, crc, true); h.setUint32(18, n, true); h.setUint32(22, n, true);
+    h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(h.buffer, name, f.data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+    c.setUint16(12, dt, true); c.setUint16(14, dd, true); c.setUint32(16, crc, true); c.setUint32(20, n, true); c.setUint32(24, n, true);
+    c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+    central.push(c.buffer, name);
+    off += 30 + name.length + n;
+  }
+  const cSize = central.reduce((a, b) => a + (b.byteLength ?? b.length), 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cSize, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, e.buffer], { type: "application/zip" });
+}
+let downloads = null;
+
+function bakedRing() { return !!(prefs.bakeRing && ring.naturalWidth); }
+/* The finished token at a given size, with the ring drawn in when withRing is set. */
+function composeToken(it, size, withRing) {
+  let c = renderToken(it, size);
+  if (withRing && ring.naturalWidth) {
+    const out = document.createElement("canvas"); out.width = out.height = size;
+    const x = out.getContext("2d"), k = size / 1024, [rx, ry, rw, rh] = ringRect(TPL[it.tpl]);
+    x.imageSmoothingQuality = "high";
+    const ringLayer = (img) => x.drawImage(img, rx * k, ry * k, rw * k, rh * k);
+    if (!prefs.ringFront || ringFrame) ringLayer(ring);
+    x.drawImage(c, 0, 0);
+    x.setTransform(k, 0, 0, k, 0, 0);
+    if (prefs.ringFront) drawRingOver(x, it, ringFrame || ring, false);
+    if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    c = out;
+  }
+  return c;
+}
+function encode(it) {
+  const size = it.size && it.size !== "auto" ? +it.size : it.tpl === "big" ? 2048 : 1024, q = +prefs.quality;
+  const c = composeToken(it, size, bakedRing());
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", q));
+}
+async function saveBlob(name, blob) {
+  if (downloads) {
+    try { await downloads.save({ filename: name, data: blob }); return true; }
+    catch (e) { if (e?.code === "declined") return false; if (!["unavailable", "not_granted", "capability_disabled", "capability_removed"].includes(e?.code)) { toast("Save failed: " + (e?.message || e?.code), true); return false; } }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return true;
+}
+function markSaved(it) {
+  it.saved = true; persistSoon(); const st = document.querySelector(`[data-id="${it.id}"] .st`);
+  if (st) { st.textContent = "Saved"; st.className = "st saved"; }
+}
+function checkWebp(blob) {
+  if (blob.type !== "image/webp") { toast("This browser can't write WebP. Use Chrome or Edge.", true); return false; }
+  return true;
+}
+$("saveOne").onclick = async () => {
+  if (!cur) return;
+  const blob = await encode(cur); if (!checkWebp(blob)) return;
+  if (await saveBlob(cur.outName + ".webp", blob)) { markSaved(cur); toast("Saved " + cur.outName + ".webp"); }
+};
+$("saveAll").onclick = async () => {
+  if (!items.length) return;
+  $("saveAll").disabled = true; $("saveAll").textContent = "Packing...";
+  try {
+    const files = [], used = new Set();
+    for (const it of items) {
+      let n = it.outName, i = 2; while (used.has(n.toLowerCase())) n = it.outName + i++;
+      used.add(n.toLowerCase());
+      const b = await encode(it); if (!checkWebp(b)) return;
+      files.push({ name: n + ".webp", data: new Uint8Array(await b.arrayBuffer()) });
+    }
+    const out = makeZip(files);
+    if (await saveBlob("tokens.zip", out)) { items.forEach(markSaved); toast("Saved " + items.length + " tokens in tokens.zip"); }
+  } finally { $("saveAll").disabled = false; $("saveAll").textContent = "Save All (.zip)"; }
+};
+$("pickDir").onclick = async () => {
+  try {
+    dirHandle = dirHandle || (await window.showDirectoryPicker({ mode: "readwrite" }));
+    for (const it of items) {
+      const b = await encode(it); if (!checkWebp(b)) return;
+      const fh = await dirHandle.getFileHandle(it.outName + ".webp", { create: true });
+      const w = await fh.createWritable(); await w.write(b); await w.close(); markSaved(it);
+    }
+    toast("Wrote " + items.length + " tokens to " + dirHandle.name);
+  } catch (e) { if (e?.name !== "AbortError") toast("Couldn't write to that folder: " + e.message, true); }
+};
+// Comparison tokens: read-only renders of other list items, placed in grid cells around the edited token.
+const CMP_TYPE = "application/x-ccs-item";
+let compare = [], cmpHover = null, cmpHits = [];
+const cmpCache = new Map();
+const objIds = new WeakMap(); let objN = 0;
+const objId = (o) => (o ? objIds.get(o) ?? (objIds.set(o, ++objN), objN) : 0);
+function sigOf(it) {
+  const last = it.strokes[it.strokes.length - 1];
+  return [it.id, it.s, it.ox, it.oy, it.tpl, JSON.stringify(it.keep), it.strokes.length, last?.pts?.length ?? 0, objId(it.img),
+    prefs.ringFront, prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame)].join("|");
+}
+function cmpCanvas(it) {
+  const sig = sigOf(it) + "|" + prefs.ring, hit = cmpCache.get(it.id);
+  if (hit?.sig === sig) return hit.c;
+  const c = composeToken(it, 768, prefs.ring);
+  cmpCache.set(it.id, { sig, c }); return c;
+}
+function setCompare(list) {
+  compare = list; $("cmpClear").hidden = !compare.length;
+  for (const id of cmpCache.keys()) if (!compare.some((c) => c.id === id)) cmpCache.delete(id);
+  draw();
+}
+// Grid cell under a point, relative to the edited token's grid box (0,0 is the token itself).
+function cmpCell(p) {
+  const [bx, by, g] = TPL[cur.tpl].box;
+  let dx = Math.floor((p.x - bx) / g), dy = Math.floor((p.y - by) / g);
+  if (!dx && !dy) dx = p.x < bx + g / 2 ? -1 : 1;
+  dx = Math.max(-3, Math.min(3, dx)); dy = Math.max(-2, Math.min(2, dy));
+  return { dx, dy };
+}
+function cellRect(T, dx, dy) { const [bx, by, g] = T.box; return [bx + dx * g, by + dy * g, g]; }
+function dropCompare(id, p) {
+  const it = items.find((i) => i.id === id);
+  if (!it || !cur) return;
+  if (it === cur) return toast("That's the token you're editing. Drag a different one to compare.", true);
+  const { dx, dy } = cmpCell(p);
+  setCompare([...compare.filter((c) => !(c.dx === dx && c.dy === dy)), { id, dx, dy }]);
+  cmpHover = null; fitCompare();
+}
+// Zoom out far enough to show every comparison token.
+function fitCompare() {
+  const T = TPL[cur.tpl], W = view.width, H = view.height; if (!W || !H) return;
+  let x0 = 0, y0 = 0, x1 = 1024, y1 = 1024;
+  for (const c of compare) { const [x, y, g] = cellRect(T, c.dx, c.dy); x0 = Math.min(x0, x - g * 0.15); y0 = Math.min(y0, y - g * 0.15); x1 = Math.max(x1, x + g * 1.15); y1 = Math.max(y1, y + g * 1.15); }
+  const s = Math.min(W / (x1 - x0), H / (y1 - y0)) * 0.94;
+  if (s >= cam.s && cam.x <= -x0 * cam.s && cam.y <= -y0 * cam.s && cam.x + x1 * cam.s <= W && cam.y + y1 * cam.s <= H) return draw();
+  cam = { s, x: (W - (x1 + x0) * s) / 2, y: (H - (y1 + y0) * s) / 2 }; draw();
+}
+function drawCompare(T) {
+  cmpHits = [];
+  for (const slot of compare) {
+    const it = items.find((i) => i.id === slot.id); if (!it || it === cur) continue;
+    const [cx, cy, g] = cellRect(T, slot.dx, slot.dy), ob = TPL[it.tpl].box, f = g / ob[2];
+    vctx.drawImage(cmpCanvas(it), cx - ob[0] * f, cy - ob[1] * f, 1024 * f, 1024 * f);
+  }
+}
+function drawCompareUi(T) {
+  const u = DPR() / cam.s;
+  vctx.save();
+  if (cmpHover) {
+    vctx.setLineDash([8 * u, 6 * u]); vctx.lineWidth = 1.5 * u; vctx.strokeStyle = "rgba(235,229,221,.35)";
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) if (dx || dy) { const [x, y, g] = cellRect(T, dx, dy); vctx.strokeRect(x, y, g, g); }
+    const [x, y, g] = cellRect(T, cmpHover.dx, cmpHover.dy);
+    vctx.setLineDash([]); vctx.lineWidth = 3 * u; vctx.strokeStyle = "#c9a46a"; vctx.strokeRect(x, y, g, g);
+    vctx.fillStyle = "rgba(201,164,106,.12)"; vctx.fillRect(x, y, g, g);
+  }
+  vctx.setLineDash([]);
+  for (const slot of compare) {
+    const it = items.find((i) => i.id === slot.id); if (!it || it === cur) continue;
+    const [x, y, g] = cellRect(T, slot.dx, slot.dy);
+    if (prefs.box) { vctx.setLineDash([10 * u, 7 * u]); vctx.lineWidth = 1.5 * u; vctx.strokeStyle = "rgba(235,229,221,.5)"; vctx.strokeRect(x, y, g, g); vctx.setLineDash([]); }
+    // Remove button, fixed size on screen.
+    const r = 10 * u, bx = x + g - r * 1.4, by = y + r * 1.4;
+    vctx.fillStyle = "rgba(20,17,23,.85)"; vctx.strokeStyle = "rgba(235,229,221,.8)"; vctx.lineWidth = 1.2 * u;
+    vctx.beginPath(); vctx.arc(bx, by, r, 0, Math.PI * 2); vctx.fill(); vctx.stroke();
+    const k = r * 0.45; vctx.beginPath(); vctx.moveTo(bx - k, by - k); vctx.lineTo(bx + k, by + k); vctx.moveTo(bx + k, by - k); vctx.lineTo(bx - k, by + k); vctx.stroke();
+    cmpHits.push({ slot, sx: bx * cam.s + cam.x, sy: by * cam.s + cam.y, r: r * cam.s * 1.2 });
+  }
+  vctx.restore();
+}
+$("cmpClear").onclick = () => setCompare([]);
+
+// Foundry host
+let host = null, sendPortraitFile = null;
+function setActor(id) {
+  if (!host) return;
+  const a = id ? host.actor(id) : null;
+  const sel = $("actorSel");
+  if (a && ![...sel.options].some((o) => o.value === a.id)) sel.add(new Option(a.name, a.id));
+  sel.value = a?.id ?? "";
+  $("actorImg").src = a?.img ?? "";
+  $("actorImg").style.visibility = a ? "visible" : "hidden";
+  host.selected(a?.id ?? "");
+  if (mapPrev) setMapPrev(!!a, true);
+}
+function attachHost(h, actorId) {
+  host = h;
+  $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
+  const sel = $("actorSel");
+  for (const a of host.actors()) sel.add(new Option(a.name, a.id));
+  setActor(actorId || "");
+  sel.onchange = () => setActor(sel.value);
+  const pick = $("actorPick");
+  pick.addEventListener("dragover", (e) => { e.preventDefault(); pick.classList.add("over"); });
+  pick.addEventListener("dragleave", () => pick.classList.remove("over"));
+  pick.addEventListener("drop", async (e) => {
+    e.preventDefault(); pick.classList.remove("over");
+    const a = await host.fromDrop(e.dataTransfer.getData("text/plain"));
+    if (a) setActor(a.id); else toast("Drag an actor from the Actors sidebar.", true);
+  });
+}
+function closeSend() { $("sendDlg").hidden = true; }
+$("sendActor").onclick = () => {
+  if (!host) return;
+  const id = $("actorSel").value;
+  if (!id) return toast("Choose an actor first, or drag one onto the actor box.", true);
+  if (!cur) return toast("Upload an image first.", true);
+  const prefs = host.prefs();
+  $("sendTitle").textContent = "Send to " + (host.actor(id)?.name ?? "Actor");
+  $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
+  sendPortraitFile = null;
+  $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
+  syncSendPortrait(); $("sendDlg").hidden = false; $("sendGo").focus();
+};
+function syncSendPortrait() {
+  $("sendPortraitName").hidden = !sendPortraitFile;
+  $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
+}
+$("sendPortrait").onchange = (e) => { host?.savePref("usePortrait", e.target.checked); syncSendPortrait(); };
+$("sendPlaced").onchange = (e) => host?.savePref("updatePlaced", e.target.checked);
+$("sendPickPortrait").onclick = () => $("sendPortraitFile").click();
+$("sendPortraitFile").onchange = (e) => {
+  sendPortraitFile = e.target.files[0] ?? null; e.target.value = ""; syncSendPortrait();
+};
+$("sendPortraitClear").onclick = () => { sendPortraitFile = null; syncSendPortrait(); };
+$("sendCancel").onclick = closeSend;
+$("sendDlg").addEventListener("click", (e) => { if (e.target === $("sendDlg") && !$("sendGo").disabled) closeSend(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sendDlg").hidden && !$("sendGo").disabled) { closeSend(); e.stopImmediatePropagation(); } }, true);
+$("sendGo").onclick = async () => {
+  const st = $("sendStatus");
+  $("sendGo").disabled = $("sendCancel").disabled = true;
+  try {
+    const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
+      portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked },
+      (m) => { st.textContent = m; st.className = "hint info send-status"; });
+    closeSend(); toast(msg);
+    if (mapPrev) setMapPrev(true, true);
+  } catch (err) {
+    st.textContent = "Couldn't send: " + (err?.message || err); st.className = "hint info send-status err";
+  } finally { $("sendGo").disabled = $("sendCancel").disabled = false; }
+};
+
+// Preview on Map: the module draws the current token on the actor's token in the open scene.
+let mapPrev = false, prevSig = "", prevT = 0, prevBusy = false, prevAgain = false;
+async function setMapPrev(on, quiet) {
+  if (!host?.previewStart) return;
+  const id = $("actorSel").value;
+  if (on && !id) { if (!quiet) toast("Choose an actor first.", true); on = false; }
+  try {
+    if (on) {
+      const n = await host.previewStart(id);
+      mapPrev = true; prevSig = ""; pushPreview();
+      if (!quiet || !n) toast(n ? "Previewing on this actor's token. Select one of their other tokens to move it. Only you can see it." : "Place this actor in the open scene to see the preview.", !n);
+    } else { mapPrev = false; await host.previewStop(); }
+  } catch (e) { mapPrev = false; toast(e?.message || String(e), true); }
+  $("mapPrev").setAttribute("aria-pressed", mapPrev);
+}
+$("mapPrev").onclick = () => setMapPrev(!mapPrev);
+function schedulePreview() { if (!mapPrev || prevT) return; prevT = setTimeout(() => { prevT = 0; pushPreview(); }, 150); }
+async function pushPreview() {
+  if (!mapPrev || !host) return;
+  if (prevBusy) { prevAgain = true; return; }
+  const baked = bakedRing(), sig = cur ? sigOf(cur) + "|" + baked : "none";
+  if (sig === prevSig) return;
+  prevBusy = true; prevSig = sig;
+  try { await host.previewUpdate(cur ? composeToken(cur, 1024, baked) : null, cur ? { tpl: cur.tpl, baked } : null); }
+  catch (e) { console.warn("Feather & Frame | map preview", e); }
+  finally { prevBusy = false; if (prevAgain) { prevAgain = false; pushPreview(); } }
+}
+
+// Help popup
+function toggleHelp(show) {
+  const pop = $("helpPop"), on = show ?? pop.hidden;
+  pop.hidden = !on; $("helpBtn").setAttribute("aria-expanded", on);
+}
+$("helpBtn").onclick = (e) => { e.stopPropagation(); toggleHelp(); };
+$("helpClose").onclick = () => toggleHelp(false);
+document.addEventListener("pointerdown", (e) => { if (!$("helpPop").hidden && !e.target.closest("#helpPop, #helpBtn")) toggleHelp(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("helpPop").hidden) toggleHelp(false); });
+$("helpDm").onclick = async () => {
+  const name = ".mordecai";
+  try { await navigator.clipboard.writeText(name); }
+  catch (e) {
+    const t = document.createElement("textarea"); t.value = name; document.body.append(t); t.select();
+    try { document.execCommand("copy"); } catch (err) { /* nothing else to try */ }
+    t.remove();
+  }
+  toast("Copied " + name + ". Paste it into Discord's friend search to send a DM.");
+};
+
+/* API used by the Foundry module. */
+window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, flush: persistNow, attachHost, setActor };
+loadKeptList();
+</script>
