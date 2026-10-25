@@ -439,8 +439,10 @@ class FeatherFrameApp extends ApplicationV2 {
      applyPackage, either right away or, for a player without upload permission, on a GM's
      computer after the GM approves. */
   async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, saveEdits = false, portraitFrom = null }, progress = () => {}) {
-    const actor = getActor(actorId), tool = this.tool;
-    if (!actor) throw new Error("Pick an actor first.");
+    const tool = this.tool;
+    const inPack = String(actorId ?? "").startsWith("Compendium.");
+    const actor = inPack ? await freshPackActor(actorId) : getActor(actorId);
+    if (!actor) throw new Error(inPack ? "That compendium actor no longer exists. Drag it in again." : "Pick an actor first.");
     if (actor.pack && !packAllowed()) throw new Error(PACK_OFF);
     if (!canUse(actor)) throw new Error("You can't change this actor.");
     if (actor.pack && game.packs.get(actor.pack)?.locked) throw new Error(`The ${game.packs.get(actor.pack).title} compendium is locked. Unlock it, then send again.`);
@@ -828,6 +830,15 @@ const packActors = new Map();
 const keyOf = (a) => (a?.pack ? a.uuid : a?.id ?? "");
 const getActor = (key) => (key ? game.actors.get(key) ?? packActors.get(key) ?? null : null);
 const rememberPackActor = (a) => { if (a?.pack) packActors.set(a.uuid, a); return a; };
+/* A compendium actor loaded again before it is written to, so a send never changes a copy that
+   was deleted or re-imported since the tool saw it. */
+async function freshPackActor(key) {
+  const a = await fromUuid(key).catch(() => null);
+  if (a instanceof Actor && a.pack) return rememberPackActor(a);
+  packActors.delete(key);
+  return null;
+}
+Hooks.on("deleteActor", (a) => { if (a.pack) packActors.delete(a.uuid); });
 const packAllowed = () => game.user.isGM && game.settings.get(ID, "compendiumActors");
 const PACK_OFF = `${TITLE}: compendium actors are turned off. A GM can turn them on in the module settings.`;
 
