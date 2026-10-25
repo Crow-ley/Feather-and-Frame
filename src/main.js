@@ -29,6 +29,14 @@ const cleanFolder = (f) => String(f || "").trim().replace(/\\/g, "/").replace(/^
 // File names keep letters, digits and a few marks; ".." and leading dots can't survive, so a name
 // can never climb out of its folder.
 const safeName = (n) => String(n || "token").replace(/[^\w\-. ()']+/g, "_").replace(/\.{2,}/g, ".").replace(/^[._ ]+|[._ ]+$/g, "") || "token";
+// A folder below the token folder, made only of the marks safeName keeps and with no "." or ".."
+// parts. Folders read from actor flags must pass this: an actor's owner can write those flags.
+function inTokenFolder(f) {
+  const base = cleanFolder(game.settings.get(ID, "tokenFolder")), path = cleanFolder(f);
+  if (!base || !path.startsWith(`${base}/`)) return false;
+  const rest = path.slice(base.length + 1);
+  return /^[\w\-. ()'/]+$/.test(rest) && !rest.split("/").some((p) => !p || p === "." || p === "..");
+}
 
 async function ensureFolder(source, folder) {
   const fp = FP();
@@ -712,11 +720,12 @@ async function handleRequest(reqId, userId, text) {
 }
 Hooks.once("ready", () => game.socket?.on(SOCKET, onSocket));
 
-/* The wildcard set this module made for an actor, if it is still in use. */
+/* The wildcard set this module made for an actor, if it is still in use. The set's folder is
+   written to and browsed with the GM's permissions, so one outside the token folder is ignored. */
 function wildcardSet(actor) {
   const info = actor?.getFlag?.(ID, "wildcard");
   const tok = actor?.prototypeToken;
-  if (!info?.folder || !tok?.randomImg || tok.texture?.src !== info.wild) return null;
+  if (!info?.folder || !inTokenFolder(info.folder) || !tok?.randomImg || tok.texture?.src !== info.wild) return null;
   return info;
 }
 
