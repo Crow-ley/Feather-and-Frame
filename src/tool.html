@@ -151,12 +151,15 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .actor-pick select { flex: 1; min-width: 0; height: 36px; font-size: .95rem; }
 .work.list-hidden .actor-pick, .work.list-hidden .load-edits { display: none !important; }
 .load-edits { width: 100%; margin-top: -4px; }
-.send-box { width: min(400px, 100%); }
+.send-box { width: fit-content; min-width: min(280px, 100%); max-width: min(380px, 100%); }
+.send-box .lib-head { justify-content: center; }
+.send-box .lib-head h2 { min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn.mini { padding: 1px 8px; font-size: 11px; min-height: 0; margin-left: 6px; }
 .send-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; text-align: left; overflow-y: auto; }
 .send-sec { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; width: 100%; }
 .wild-list { display: flex; flex-direction: column; gap: 4px; width: 100%; max-height: 210px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; text-align: left; margin-bottom: 6px; }
-.wild-row { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; }
+.wild-row { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; min-width: 0; }
+.wild-row span { min-width: 0; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wild-row canvas { width: 36px; height: 36px; border-radius: 4px; background: #0d0b0f; flex: none; }
 .wild-row input { accent-color: var(--brass); }
 .wild-row.off { opacity: .5; cursor: default; }
@@ -168,7 +171,7 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .send-body .wild-list { margin-left: 24px; width: fit-content; max-width: calc(100% - 24px); padding-right: 14px; }
 
 .send-status.err { color: var(--blood); } .send-status.ok { color: var(--ok); }
-.send-foot { display: flex; justify-content: flex-start; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.send-foot { display: flex; justify-content: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
 .send-foot .btn { min-width: 110px; }
 
 /* Text alignment */
@@ -1614,6 +1617,7 @@ $("sendActor").onclick = () => {
   if (!cur) return toast("Upload an image first.", true);
   const prefs = host.prefs();
   $("sendTitle").textContent = "Send to " + (host.actor(id)?.name ?? "Actor");
+  $("sendTitle").title = $("sendTitle").textContent;   // full name on hover when it's cut off
   $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
   sendPortraitFile = null;
   $("sendEdits").checked = prefs.saveEdits !== false;
@@ -1642,6 +1646,7 @@ function fillWild(id) {
     c.getContext("2d").drawImage(renderToken(it, 144), 0, 0, 72, 72);
     const nm = document.createElement("span");
     nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Big Chungus" : "Standard"}, can't mix templates)`);
+    nm.title = nm.textContent;
     row.append(cb, c, nm); list.append(row);
   }
   $("sendWildAddLabel").textContent = wildInfo ? `Add to the existing set (${wildInfo.count} token${wildInfo.count === 1 ? "" : "s"})` : "";
