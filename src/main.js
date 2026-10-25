@@ -739,9 +739,7 @@ async function handleRequest(reqId, userId, text) {
     const portrait = body.portrait;
     if (portrait && (typeof portrait.data !== "string" || !/^data:image\/(png|jpeg|webp|gif|avif);base64,/.test(portrait.data))) throw new Error("The portrait isn't an image.");
     const ext = portrait ? ((/^\.(png|jpe?g|webp|gif|avif)$/i.exec(portrait.ext ?? "")?.[0] ?? ".webp").toLowerCase()) : null;
-    const edits = Array.isArray(body.edits) ? body.edits.filter((e) => {
-      try { return JSON.parse(e.json)?.format === "feather-and-frame-edit"; } catch (err) { return false; }
-    }) : null;
+    const edits = Array.isArray(body.edits) ? body.edits.filter((e) => validEdit(e?.json)) : null;
     const tpl = body.tpl === "big" ? "big" : "standard";
     const wildcard = body.wildcard ? { add: !!body.wildcard.add } : null;
 
@@ -777,7 +775,7 @@ async function handleRequest(reqId, userId, text) {
       portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: await dataToBlob(portrait.data) } : null,
       edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,
     };
-    const size = pkg.tokens.reduce((s, t) => s + t.blob.size, 0) + (pkg.portrait?.blob.size ?? 0);
+    const size = pkg.tokens.reduce((s, t) => s + t.blob.size, 0) + (pkg.portrait?.blob.size ?? 0) + (pkg.edits ?? []).reduce((s, e) => s + e.json.length, 0);
     if (size > MAX_BYTES) throw new Error("The files are too large.");
     const message = await applyPackage(actor, pkg);
     reply(true, `${message} Approved by ${game.user.name}.`);
@@ -805,10 +803,33 @@ async function listSet(setFolder, fallback) {
   } catch (e) { return fallback; }
 }
 
-/* Saved edits listed on an actor, and loading their files back as text for the tool. */
+/* Saved edits listed on an actor, and loading their files back as text for the tool. The list is
+   an actor flag its owner can write, so only paths on this server (or the Forge's file store) are
+   read, and a file is used only if it is a saved edit whose images are written in as data URLs:
+   the tool turns those into files, and any other address would make it fetch from elsewhere. */
 function savedEdits(actor) {
   const list = actor?.getFlag?.(ID, "edits");
-  return Array.isArray(list) ? list.filter((e) => e?.path) : [];
+  return Array.isArray(list) ? list.filter((e) => editPathOk(e?.path)) : [];
+}
+function editPathOk(path) {
+  const p = String(path ?? "");
+  if (/^https:/i.test(p)) {
+    let u; try { u = new URL(p); } catch (e) { return false; }
+    return fileSource() === "forgevtt" && /(^|\.)forge-vtt\.com$/i.test(u.hostname) && /\.json$/i.test(u.pathname);
+  }
+  if (!/^[\w\-. ()'%/]+\.json$/i.test(p) || p.startsWith("//") || /%2e|%2f|%5c/i.test(p)) return false;
+  return !p.replace(/^\//, "").split("/").some((s) => !s || s === "." || s === "..");
+}
+const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/]*={0,2}$/;
+function validEdit(json) {
+  if (typeof json !== "string") return false;
+  let doc; try { doc = JSON.parse(json); } catch (e) { return false; }
+  const it = doc?.item;
+  const file = (f) => f && typeof f === "object" && typeof f.data === "string" && DATA_URL.test(f.data);
+  if (doc?.format !== "feather-and-frame-edit" || !it || typeof it !== "object" || !file(it.file)) return false;
+  if (it.origFile != null && !file(it.origFile)) return false;
+  if (it.strokes != null && !Array.isArray(it.strokes)) return false;
+  return (it.strokes ?? []).every((s) => s && typeof s === "object" && (!s.clip || (typeof s.clip.png === "string" && DATA_URL.test(s.clip.png))));
 }
 async function loadEdits(actor) {
   if (!actor || !canUse(actor)) throw new Error("You can't open this actor's edits.");
@@ -818,7 +839,9 @@ async function loadEdits(actor) {
     try {
       const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
       if (!res.ok) throw new Error(res.status);
-      texts.push(await res.text());
+      const text = await res.text();
+      if (!validEdit(text)) throw new Error("not a saved edit");
+      texts.push(text);
     } catch (err) { missing++; }
   }
   return { texts, missing };

@@ -1770,7 +1770,11 @@ $("helpDm").onclick = async () => {
 const EDIT_FORMAT = "feather-and-frame-edit";
 const blobToData = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
 const fileToJson = async (f) => (f ? { name: f.name || "image", type: f.type || "image/png", data: await blobToData(f) } : null);
-const jsonToFile = async (o) => (o ? new File([await (await fetch(o.data)).blob()], o.name, { type: o.type }) : null);
+// Saved edits carry their images as data URLs; any other address is refused, so loading an edit
+// never fetches from somewhere else.
+const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,/;
+const fromData = async (d) => { if (typeof d !== "string" || !DATA_URL.test(d)) throw new Error("not a saved edit"); return (await fetch(d)).blob(); };
+const jsonToFile = async (o) => (o ? new File([await fromData(o.data)], String(o.name ?? "image"), { type: String(o.type ?? "") }) : null);
 async function exportEdit(id) {
   const it = items.find((i) => i.id === id); if (!it) throw new Error("That token isn't in the list any more.");
   const snap = await serialize(it);
@@ -1781,7 +1785,7 @@ async function importEdit(text) {
   const doc = JSON.parse(text);
   if (doc?.format !== EDIT_FORMAT || !doc.item?.file) throw new Error("not a saved edit");
   const snap = { ...doc.item, file: await jsonToFile(doc.item.file), origFile: await jsonToFile(doc.item.origFile) };
-  snap.strokes = await Promise.all((snap.strokes || []).map(async (st) => (st.clip ? { ...st, clip: { invert: st.clip.invert, png: await (await fetch(st.clip.png)).blob() } } : st)));
+  snap.strokes = await Promise.all((snap.strokes || []).map(async (st) => (st.clip ? { ...st, clip: { invert: st.clip.invert, png: await fromData(st.clip.png) } } : st)));
   return restore(snap);
 }
 function syncLoadEdits() {
