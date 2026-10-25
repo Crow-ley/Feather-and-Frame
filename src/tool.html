@@ -1579,7 +1579,11 @@ function setActor(id) {
   if (!host) return;
   const a = id ? host.actor(id) : null;
   const sel = $("actorSel");
-  if (a && ![...sel.options].some((o) => o.value === a.id)) sel.add(new Option(a.name, a.id));
+  if (a && ![...sel.options].some((o) => o.value === a.id)) {
+    const o = new Option(a.name, a.id);
+    // World actors go above the Compendiums heading, compendium actors under it.
+    if (host.isPack?.(a.id)) packGroup().append(o); else sel.add(o, sel.querySelector("optgroup.packs"));
+  }
   sel.value = a?.id ?? "";
   filterActors();
   $("actorImg").src = a?.img ?? "";
@@ -1593,11 +1597,50 @@ function setActor(id) {
    actor...") and the actor already picked always stay, so the dropdown never looks empty and
    never loses its selection. */
 function filterActors() {
-  const q = $("actorFind").value.trim().toLowerCase();
   const sel = $("actorSel");
-  for (const o of sel.options) o.hidden = !!q && !!o.value && o.value !== sel.value && !o.text.toLowerCase().includes(q);
+  for (const o of sel.options) o.hidden = !!o.value && o.value !== sel.value && !matchesSearch(o);
+  // A heading with nothing left under it is hidden too.
+  for (const g of sel.querySelectorAll("optgroup")) g.hidden = [...g.children].every((o) => o.hidden);
+}
+/* Does this actor's name contain the search text? An empty search matches everyone. */
+function matchesSearch(o) {
+  const q = $("actorFind").value.trim().toLowerCase();
+  return !q || o.text.toLowerCase().includes(q);
 }
 $("actorFind").oninput = filterActors;
+
+/* Keys in the search box: Up and Down step through the matching actors and pick each one,
+   Enter picks the first match (unless the picked actor already matches), Escape clears the
+   search. The cursor stays in the box, so you can keep typing. */
+$("actorFind").onkeydown = (e) => {
+  const sel = $("actorSel");
+  const found = [...sel.options].filter((o) => o.value && matchesSearch(o));
+  const at = found.findIndex((o) => o.value === sel.value);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!found.length) return;
+    const down = e.key === "ArrowDown";
+    // From nothing picked (or a pick that doesn't match), Down starts at the top and Up at the bottom.
+    const next = at < 0 ? (down ? 0 : found.length - 1) : (at + (down ? 1 : -1) + found.length) % found.length;
+    setActor(found[next].value);
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (at < 0 && found.length) setActor(found[0].value);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    e.target.value = "";
+    filterActors();
+  }
+};
+
+/* The "Compendiums" heading in the dropdown, made the first time a compendium actor is added.
+   It goes last, so world actors stay at the top. */
+function packGroup() {
+  const sel = $("actorSel");
+  let g = sel.querySelector("optgroup.packs");
+  if (!g) { g = document.createElement("optgroup"); g.className = "packs"; g.label = "Compendiums"; sel.append(g); }
+  return g;
+}
 
 /* Ask Foundry for its ring, colored for this actor, and use it as the default ring. */
 let ringAsk = 0;
