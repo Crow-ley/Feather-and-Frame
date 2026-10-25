@@ -56,6 +56,10 @@ The fonts, icons and images ship with the module. The two fonts, IM Fell English
 
 Code written with help from Claude (AI).
 
+## License
+
+The code is under the MIT License; see [LICENSE](LICENSE). The fonts keep their own SIL Open Font License.
+
 ## Help
 
 If something isn't working, join the [Burn Bin Inn Discord server](https://discord.gg/HXHdzXR6mC) or send me a DM on Discord at .mordecai.

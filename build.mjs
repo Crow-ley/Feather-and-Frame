@@ -23,7 +23,7 @@ const ASSETS = {
   "assets/fonts/alegreya-sans-500.woff": "font/woff", "assets/fonts/alegreya-sans-700.woff": "font/woff",
 };
 // Shipped with the module but not used by the page: the font licenses.
-const EXTRA = ["assets/fonts/OFL-im-fell-english-sc.txt", "assets/fonts/OFL-alegreya-sans.txt"];
+const EXTRA = ["LICENSE", "assets/fonts/OFL-im-fell-english-sc.txt", "assets/fonts/OFL-alegreya-sans.txt"];
 const source = read("src/tool.html").toString();
 for (const a of Object.keys(ASSETS)) if (!source.includes(`"${a}"`)) throw new Error(`src/tool.html doesn't use ${a}`);
 const wrap = (body) => `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
