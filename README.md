@@ -41,8 +41,8 @@ Standard tokens get a token scale of 1 and a ring scale correction of 1. Big Chu
 
 The tool also works on its own for other VTTs or plain token making. Each release has two downloads for this:
 
-- `Feather & Frame.exe`, a standalone Windows app. Download it and run it, no install needed.
-- `Feather & Frame.html`, the same tool as a single web page that opens in any browser.
+- `Feather.Frame.exe`, a standalone Windows app. Download it and run it, no install needed.
+- `Feather.Frame.html`, the same tool as a single web page that opens in any browser.
 
 Both make the same ringed tokens as the module and save them as WebP files. Without Foundry there's no dynamic ring to read, so they use a plain default ring, or a custom ring you load. Bake the ring into the image for VTTs that don't have dynamic rings.
 
