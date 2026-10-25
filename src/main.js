@@ -1,8 +1,6 @@
 /* Feather & Frame (Foundry VTT v13+)
  * Opens the token tool inside Foundry and sends finished tokens straight to an actor. */
 
-import { TOOL_HTML } from "./tool.js";
-
 const ID = "feather-and-frame";
 const TITLE = "Feather & Frame";
 
@@ -15,6 +13,7 @@ Hooks.once("init", () => {
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("checkUpdates", { name: "Check GitHub for updates", hint: "Once per session, when a GM opens the window, ask GitHub whether a newer version is out. This sends one request to api.github.com and nothing else.", type: Boolean, default: true });
   reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
@@ -149,6 +148,22 @@ async function ringImage(actor) {
   return c.toDataURL("image/png");
 }
 
+// Tool page
+// The tool page ships as a normal file (tool.html) next to its images in assets/.
+// It is read once, given a <base> tag so its relative image paths point at this module's
+// folder, and loaded into the window's iframe with srcdoc.
+let toolPage = null;
+async function loadToolPage() {
+  if (toolPage) return toolPage;
+  const folder = new URL(foundry.utils.getRoute(`modules/${ID}/`), window.location.href).href;
+  const version = game.modules.get(ID)?.version ?? "";
+  const res = await fetch(`${folder}tool.html?v=${encodeURIComponent(version)}`, { cache: "no-cache" });
+  if (!res.ok) throw new Error(`tool.html: ${res.status}`);
+  const html = await res.text();
+  if (!html.includes("<head>")) throw new Error("tool.html has no <head>");
+  return (toolPage = html.replace("<head>", `<head>\n<base href="${folder}">`));
+}
+
 // Window
 const { ApplicationV2 } = foundry.applications.api;
 
@@ -190,7 +205,11 @@ class FeatherFrameApp extends ApplicationV2 {
     const wrap = document.createElement("div");
     wrap.className = "ccs-wrap";
     wrap.innerHTML = `<iframe class="ccs-frame" data-ccs="frame"></iframe>`;
-    wrap.querySelector("iframe").srcdoc = TOOL_HTML;
+    try { wrap.querySelector("iframe").srcdoc = await loadToolPage(); }
+    catch (e) {
+      console.error(`${TITLE} | tool page`, e);
+      ui.notifications.error(`${TITLE}: couldn't load the tool page. Try reinstalling the module.`);
+    }
     return wrap;
   }
 
@@ -439,8 +458,9 @@ function openApp(actor) {
 const REPO = "Crow-ley/feather-and-frame";
 const MANIFEST = `https://github.com/${REPO}/releases/latest/download/module.json`;
 let updateChecked = false;
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 async function checkForUpdate() {
-  if (updateChecked || !game.user.isGM) return;
+  if (updateChecked || !game.user.isGM || !game.settings.get(ID, "checkUpdates")) return;
   updateChecked = true;
   let release;
   try {
@@ -448,17 +468,22 @@ async function checkForUpdate() {
     if (!res.ok) return;
     release = await res.json();
   } catch (e) { return; } // offline or GitHub unreachable: say nothing
+  // Everything from GitHub is checked before use: the tag must be a plain version number
+  // and the link must point into this repository. Both are escaped before they go into HTML.
   const latest = String(release.tag_name ?? "").replace(/^v/i, "");
+  if (!/^\d+(\.\d+){0,3}$/.test(latest)) return;
   const installed = game.modules.get(ID)?.version ?? "0";
-  if (!latest || !foundry.utils.isNewerVersion(latest, installed)) return;
+  if (!foundry.utils.isNewerVersion(latest, installed)) return;
   if (game.settings.get(ID, "skipVersion") === latest) return;
-  const page = release.html_url ?? `https://github.com/${REPO}/releases/latest`;
+  const fallback = `https://github.com/${REPO}/releases/latest`;
+  const url = String(release.html_url ?? "");
+  const page = url.toLowerCase().startsWith(`https://github.com/${REPO}/releases/`.toLowerCase()) ? url : fallback;
   const content = `
-    <p>Version <strong>${latest}</strong> is out. You have ${installed}.</p>
+    <p>Version <strong>${escapeHtml(latest)}</strong> is out. You have ${escapeHtml(installed)}.</p>
     <p>To update, go to Foundry's setup screen, open Add-on Modules and click the update button next to ${TITLE}.
     If that button doesn't appear, uninstall the module and install it again with this manifest URL:</p>
-    <input type="text" readonly value="${MANIFEST}" style="width:100%" onclick="this.select()">
-    <p><a href="${page}" target="_blank" rel="noopener">See what changed on GitHub</a></p>`;
+    <input type="text" readonly value="${escapeHtml(MANIFEST)}" style="width:100%">
+    <p><a href="${escapeHtml(page)}" target="_blank" rel="noopener noreferrer">See what changed on GitHub</a></p>`;
   const choice = await foundry.applications.api.DialogV2.wait({
     window: { title: `${TITLE} update available`, icon: "fa-solid fa-feather" },
     content,

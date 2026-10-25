@@ -16,31 +16,31 @@ const manifest = JSON.parse(read("module.json"));
 const v = manifest.version;
 const id = manifest.id;
 
-// 1. The tool page, with its images written in as base64 so it needs no other files.
-const page = read("src/tool.html").toString()
-  .replace("__FAVICON__", b64("assets/favicon.png"))
-  .replace("__DISCORD_SERVER__", b64("assets/discord-server.webp"))
-  .replace("__DISCORD_USER__", b64("assets/discord-user.webp"));
-const fullPage = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${page}\n</body>\n</html>\n`;
+// 1. The tool page. src/tool.html refers to its images as assets/<name>.
+const ASSETS = { "assets/favicon.png": "image/png", "assets/discord-server.webp": "image/webp", "assets/discord-user.webp": "image/webp" };
+const source = read("src/tool.html").toString();
+for (const a of Object.keys(ASSETS)) if (!source.includes(`"${a}"`)) throw new Error(`src/tool.html doesn't use ${a}`);
+const wrap = (body) => `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
+// The standalone page has nowhere to load images from, so they are written in as base64.
+let standalone = source;
+for (const [a, type] of Object.entries(ASSETS)) standalone = standalone.split(`"${a}"`).join(`"data:${type};base64,${b64(a)}"`);
 
-// 2. The module folder. File names carry the version so Foundry never runs a cached older copy.
+// 2. The module folder. The script and style names carry the version so Foundry never runs
+//    a cached older copy. tool.html and the images are shipped as they are, readable.
 const out = join(root, "dist", id);
 rmSync(join(root, "dist"), { recursive: true, force: true });
-mkdirSync(join(out, "scripts"), { recursive: true });
-mkdirSync(join(out, "styles"), { recursive: true });
+for (const d of ["scripts", "styles", "assets"]) mkdirSync(join(out, d), { recursive: true });
 
-const main = read("src/main.js").toString();
-if (!main.includes('from "./tool.js"')) throw new Error('src/main.js must import from "./tool.js"');
-writeFileSync(join(out, "scripts", `main-${v}.js`), main.replace('from "./tool.js"', `from "./tool-${v}.js"`));
-writeFileSync(join(out, "scripts", `tool-${v}.js`),
-  `// Feather & Frame tool page, bundled as a string and loaded into the window iframe.\nexport const TOOL_HTML = ${JSON.stringify(fullPage)};\n`);
+writeFileSync(join(out, "scripts", `main-${v}.js`), read("src/main.js"));
 writeFileSync(join(out, "styles", `ccs-${v}.css`), read("src/ccs.css"));
+writeFileSync(join(out, "tool.html"), wrap(source));
+for (const a of Object.keys(ASSETS)) writeFileSync(join(out, a), read(a));
 
 const built = { ...manifest, esmodules: [`scripts/main-${v}.js`], styles: [`styles/ccs-${v}.css`] };
 const manifestText = JSON.stringify(built, null, 2) + "\n";
 writeFileSync(join(out, "module.json"), manifestText);
 writeFileSync(join(root, "dist", "module.json"), manifestText);
-writeFileSync(join(root, "dist", `${id}.html`), page);
+writeFileSync(join(root, "dist", `${id}.html`), standalone);
 
 // 3. The release zip, files at its root as Foundry expects. A small store-only zip writer
 //    (no compression) so the build needs nothing beyond Node itself.
@@ -54,6 +54,8 @@ const crc32 = (buf) => {
   for (const byte of buf) c = crcTable[(c ^ byte) & 255] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 };
+// Zip entries need a valid date; 1 January 2026 in the DOS format zip uses.
+const DOS_DATE = ((2026 - 1980) << 9) | (1 << 5) | 1;
 const files = [];
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {
@@ -68,12 +70,12 @@ let offset = 0;
 for (const f of files) {
   const name = Buffer.from(f.name), crc = crc32(f.data), size = f.data.length;
   const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(DOS_DATE, 12);
   local.writeUInt32LE(crc, 14); local.writeUInt32LE(size, 18); local.writeUInt32LE(size, 22);
   local.writeUInt16LE(name.length, 26);
   parts.push(local, name, f.data);
   const cen = Buffer.alloc(46);
-  cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6);
+  cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6); cen.writeUInt16LE(DOS_DATE, 14);
   cen.writeUInt32LE(crc, 16); cen.writeUInt32LE(size, 20); cen.writeUInt32LE(size, 24);
   cen.writeUInt16LE(name.length, 28); cen.writeUInt32LE(offset, 42);
   central.push(cen, name);

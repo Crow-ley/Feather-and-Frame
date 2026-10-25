@@ -4,7 +4,7 @@
 
 - `module.json`: the manifest. Change `version` here before each release.
 - `src/main.js`: the Foundry side (window, Send to Actor, map preview, sheet buttons).
-- `src/tool.html`: the tool page (layout, styles and all the image code). The `__FAVICON__`, `__DISCORD_SERVER__` and `__DISCORD_USER__` markers are replaced with the images from `assets/` during the build.
+- `src/tool.html`: the tool page (layout, styles and all the image code). It refers to its images as `assets/<name>`. The module ships it as a normal file and loads it into the window; the standalone page gets the images written in as base64.
 - `src/ccs.css`: styles for the Foundry window and the sheet buttons.
 - `assets/`: the icon and the two Discord pictures. There is no ring image: inside Foundry the tool uses the ring picked in Foundry's Dynamic Token Ring setting, and the standalone page draws a plain ring in code.
 - `build.mjs`: the build script.
