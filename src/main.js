@@ -591,6 +591,10 @@ async function applyPackage(actor, pkg, progress = () => {}) {
 // rendered files go to the active GM over the module's socket in small pieces. The GM sees what
 // will change and approves or declines; on approval the GM's Foundry runs applyPackage. The GM
 // side checks everything itself and only ever writes into its own configured folders.
+// Socket messages say nothing trustworthy about who sent them, so the player also marks the
+// request on their own User (the request id and a hash of the package). Only that player or a GM
+// can write a User, so the GM trusts a request only when the sender's mark matches it, and clears
+// the mark before answering, which is how the player knows the answer came from a GM.
 const SOCKET = `module.${ID}`;
 const PART = 200000;                    // characters per socket message
 const MAX_TOKENS = 50, MAX_BYTES = 40e6;
@@ -605,6 +609,43 @@ function needsApproval(wildcard) {
 const blobToData = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
 const dataToBlob = async (d) => (await fetch(d)).blob();
 
+// SHA-256 of a string's UTF-8 bytes, as hex. crypto.subtle only exists on https and localhost,
+// and many Foundry servers run on plain http, so it is worked out here.
+const SHA = (() => {
+  const K = [], H = [];
+  for (let c = 2, k = 0; k < 64; c++) {
+    let prime = true;
+    for (let d = 2; d * d <= c; d++) if (c % d === 0) { prime = false; break; }
+    if (!prime) continue;
+    if (k < 8) H[k] = ((c ** (1 / 2)) % 1) * 2 ** 32 | 0;
+    K[k++] = ((c ** (1 / 3)) % 1) * 2 ** 32 | 0;
+  }
+  return { K, H };
+})();
+function sha256(text) {
+  const bytes = new TextEncoder().encode(text), len = bytes.length, n = ((len + 72) >> 6) << 4;
+  const m = new Uint32Array(n), W = new Uint32Array(64), s = [...SHA.H], K = SHA.K;
+  for (let i = 0; i < len; i++) m[i >> 2] |= bytes[i] << (24 - (i % 4) * 8);
+  m[len >> 2] |= 0x80 << (24 - (len % 4) * 8);
+  m[n - 2] = Math.floor(len / 0x20000000); m[n - 1] = len << 3;
+  const rot = (x, r) => (x >>> r) | (x << (32 - r));
+  for (let j = 0; j < n; j += 16) {
+    for (let i = 0; i < 64; i++) {
+      if (i < 16) { W[i] = m[j + i]; continue; }
+      const x = W[i - 15], y = W[i - 2];
+      W[i] = (rot(x, 7) ^ rot(x, 18) ^ (x >>> 3)) + W[i - 7] + (rot(y, 17) ^ rot(y, 19) ^ (y >>> 10)) + W[i - 16];
+    }
+    let [a, b, c, d, e, f, g, h] = s;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0;
+      const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { s[i] = (s[i] + v) | 0; });
+  }
+  return s.map((v) => (v >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
 async function requestApproval(pkg, progress) {
   const gm = game.users.activeGM;
   if (!gm) throw new Error("No GM is online to approve this. Try again when your GM is connected.");
@@ -618,9 +659,14 @@ async function requestApproval(pkg, progress) {
   const text = JSON.stringify(body);
   if (text.length > MAX_BYTES * 1.4) throw new Error("These images are too large to send to the GM. Try fewer tokens or a smaller portrait.");
   const reqId = foundry.utils.randomID(), n = Math.ceil(text.length / PART);
+  await game.user.setFlag(ID, "request", { id: reqId, hash: sha256(text) });
   const answer = new Promise((resolve, reject) => {
     waiting.set(reqId, { resolve, reject });
-    setTimeout(() => { if (waiting.delete(reqId)) reject(new Error("Your GM didn't answer within 15 minutes.")); }, 15 * 60 * 1000);
+    setTimeout(() => {
+      if (!waiting.delete(reqId)) return;
+      if (game.user.getFlag(ID, "request")?.id === reqId) game.user.unsetFlag(ID, "request").catch(() => {});
+      reject(new Error("Your GM didn't answer within 15 minutes."));
+    }, 15 * 60 * 1000);
   });
   for (let i = 0; i < n; i++) {
     progress(`Sending to ${gm.name}... ${Math.round(((i + 1) / n) * 100)}%`);
@@ -634,7 +680,8 @@ function onSocket(msg) {
   if (!msg || msg.to !== game.user.id) return;
   if (msg.type === "result") {
     const w = waiting.get(msg.reqId);
-    if (!w) return;
+    // A GM clears the request mark before answering, so an answer while it is still set is forged.
+    if (!w || game.user.getFlag(ID, "request")?.id === msg.reqId) return;
     waiting.delete(msg.reqId);
     if (msg.ok) w.resolve(String(msg.message)); else w.reject(new Error(String(msg.message)));
     return;
@@ -654,10 +701,17 @@ function onSocket(msg) {
 }
 
 async function handleRequest(reqId, userId, text) {
-  const reply = (ok, message) => game.socket.emit(SOCKET, { type: "result", reqId, to: userId, from: game.user.id, ok, message });
+  const reply = async (ok, message) => {
+    const user = game.users.get(userId);
+    if (user?.getFlag(ID, "request")?.id === reqId) await user.unsetFlag(ID, "request").catch((e) => console.warn(`${TITLE} | approval`, e));
+    game.socket.emit(SOCKET, { type: "result", reqId, to: userId, from: game.user.id, ok, message });
+  };
   try {
     const user = game.users.get(userId);
     if (!user) throw new Error("Unknown user.");
+    // The sender's own mark must name this request and match what arrived (see GM approval above).
+    const mark = user.getFlag(ID, "request");
+    if (user.isGM || mark?.id !== reqId || mark.hash !== sha256(text)) throw new Error("Your GM couldn't confirm this request came from you. Send it again.");
     if (!game.settings.get(ID, "allowPlayers")) throw new Error("The GM hasn't allowed players to make tokens.");
     let body;
     try { body = JSON.parse(text); } catch (e) { throw new Error("The request arrived damaged. Try again."); }
