@@ -22,7 +22,7 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 - Custom rings, with a saved ring library
 - An option to bake the ring into the image for VTTs without dynamic rings
 - Send to Actor uploads the token, turns on the ring and sets the scale values for you. It can also set the portrait (the original image or another one you pick) and update tokens already placed on scenes.
-- Wildcard sets: send several tokens as one set and Foundry gives each token you place a random one, ring included. You can add more to a set later.
+- Wildcard sets: send several tokens as one set and Foundry gives each token you place a random one, ring included. You can add more to a set later, and choose which token's original art becomes the portrait.
 - Saved edits: each send can keep the token's edits with the actor. Next time, pick the actor and click Load Saved Edits to carry on where you left off.
 - Works with actors stored in compendiums (GM only, can be turned off in the settings): drag one from a compendium onto the actor box, or use the crow on its sheet. Sending changes the compendium entry, so unlock the compendium first.
 - Preview on Map shows your edits on the actor's token in the open scene before you send. Only you see it.
@@ -36,6 +36,15 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 Click the crow on a character's portrait while the sheet is in edit mode. You can also open it from the Actors sidebar or an actor's right-click menu. Load an image, adjust it, pick the actor and click Send to Actor.
 
 Standard tokens get a token scale of 1 and a ring scale correction of 1. Big Chungus tokens get 2 and 2. You can change these in the module settings.
+
+## Without Foundry
+
+The tool also works on its own for other VTTs or plain token making. Each release has two downloads for this:
+
+- `Feather & Frame.exe`, a standalone Windows app. Download it and run it, no install needed.
+- `Feather & Frame.html`, the same tool as a single web page that opens in any browser.
+
+Both make the same ringed tokens as the module and save them as WebP files. Without Foundry there's no dynamic ring to read, so they use a plain default ring, or a custom ring you load. Bake the ring into the image for VTTs that don't have dynamic rings.
 
 ## Outside connections
 
