@@ -151,21 +151,24 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .actor-pick select { flex: 1; min-width: 0; height: 36px; font-size: .95rem; }
 .work.list-hidden .actor-pick, .work.list-hidden .load-edits { display: none !important; }
 .load-edits { width: 100%; margin-top: -4px; }
-.send-box { width: min(460px, 100%); }
+.send-box { width: min(400px, 100%); }
 .btn.mini { padding: 1px 8px; font-size: 11px; min-height: 0; margin-left: 6px; }
-.send-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; overflow-y: auto; }
-.send-sec { display: flex; flex-direction: column; gap: 6px; align-items: center; width: 100%; }
+.send-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 5px; align-items: flex-start; text-align: left; overflow-y: auto; }
+.send-sec { display: flex; flex-direction: column; gap: 5px; align-items: flex-start; width: 100%; }
 .wild-list { display: flex; flex-direction: column; gap: 4px; width: 100%; max-height: 210px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; text-align: left; margin-bottom: 6px; }
 .wild-row { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; }
 .wild-row canvas { width: 36px; height: 36px; border-radius: 4px; background: #0d0b0f; flex: none; }
 .wild-row input { accent-color: var(--brass); }
 .wild-row.off { opacity: .5; cursor: default; }
-.send-body .check { justify-content: center; font-size: .95rem; }
-.send-body .hint { margin-bottom: 6px; }
-.send-status { min-height: 1.2em; }
+.send-body .check { justify-content: flex-start; font-size: .95rem; }
+.send-body .hint { margin: -2px 0 4px 24px; }
+.send-body > .row, .send-body > .hint.info { margin-left: 24px; }
+.send-status:empty { display: none; }
+.send-body .wild-list { margin-left: 24px; width: calc(100% - 24px); }
+.send-status { margin-left: 0 !important; }
 .send-status.err { color: var(--blood); } .send-status.ok { color: var(--ok); }
-.send-foot { display: flex; justify-content: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
-.send-foot .btn { min-width: 130px; }
+.send-foot { display: flex; justify-content: flex-start; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.send-foot .btn { min-width: 110px; }
 
 /* Text alignment */
 select { text-align: center; text-align-last: center; }
