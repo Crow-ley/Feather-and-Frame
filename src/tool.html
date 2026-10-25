@@ -148,7 +148,9 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .actor-pick { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
 .actor-pick.over { border-color: var(--brass); background: var(--raise); }
 .actor-pick img { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; flex: none; background: var(--bg); }
-.actor-pick select { flex: 1; min-width: 0; height: 36px; font-size: .95rem; }
+.actor-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.actor-pick select { height: 36px; font-size: .95rem; }
+.actor-pick input { height: 30px; font-size: .9rem; }
 .work.list-hidden .actor-pick, .work.list-hidden .load-edits { display: none !important; }
 .load-edits { width: 100%; margin-top: -4px; }
 .send-box { width: fit-content; min-width: min(280px, 100%); max-width: min(380px, 100%); }
@@ -210,7 +212,10 @@ header p { flex: 0 1 auto; }
     <div class="col col-left">
     <div class="actor-pick" id="actorPick" hidden title="Drag an actor from the Actors sidebar here, or choose one">
       <img id="actorImg" alt="">
-      <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
+      <div class="actor-fields">
+        <input id="actorFind" type="text" placeholder="Search actors..." aria-label="Search actors" autocomplete="off" spellcheck="false">
+        <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
+      </div>
     </div>
     <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Saved Edits</button>
     <section class="pane list" aria-label="Tokens">
@@ -1576,6 +1581,7 @@ function setActor(id) {
   const sel = $("actorSel");
   if (a && ![...sel.options].some((o) => o.value === a.id)) sel.add(new Option(a.name, a.id));
   sel.value = a?.id ?? "";
+  filterActors();
   $("actorImg").src = a?.img ?? "";
   $("actorImg").style.visibility = a ? "visible" : "hidden";
   host.selected(a?.id ?? "");
@@ -1583,6 +1589,16 @@ function setActor(id) {
   syncLoadEdits();
   if (mapPrev) setMapPrev(!!a, true);
 }
+/* Hide the actors whose names don't contain the search text. The first option ("Choose an
+   actor...") and the actor already picked always stay, so the dropdown never looks empty and
+   never loses its selection. */
+function filterActors() {
+  const q = $("actorFind").value.trim().toLowerCase();
+  const sel = $("actorSel");
+  for (const o of sel.options) o.hidden = !!q && !!o.value && o.value !== sel.value && !o.text.toLowerCase().includes(q);
+}
+$("actorFind").oninput = filterActors;
+
 /* Ask Foundry for its ring, colored for this actor, and use it as the default ring. */
 let ringAsk = 0;
 async function foundryRing(id) {
