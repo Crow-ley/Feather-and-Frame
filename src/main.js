@@ -58,6 +58,9 @@ async function upload(file, folder) {
 // The module ships no ring art. It reads the spritesheet of the ring this actor's token uses and
 // draws it at 1024 px, coloured the way Foundry's ring shader would colour it.
 const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.getRoute(p));
+// The tool page has a <base> pointing at this module's folder, so Foundry paths it shows
+// (like an actor's image) are passed as full addresses.
+const fullUrl = (p) => new URL(routeOf(p), window.location.href).href;
 
 /* The spritesheet for an actor's ring: the ring picked in Foundry's "Dynamic Token Rings" setting.
    Multiple Rings, when it is active, lets each token pick its own ring and replaces Foundry's
@@ -294,7 +297,7 @@ class FeatherFrameApp extends ApplicationV2 {
 
   /* Everything the tool needs from Foundry. */
   #host() {
-    const info = (a) => (a ? { id: keyOf(a), name: a.pack ? `${a.name} (${game.packs.get(a.pack)?.title ?? "compendium"})` : a.name, img: a.img || "icons/svg/mystery-man.svg" } : null);
+    const info = (a) => (a ? { id: keyOf(a), name: a.pack ? `${a.name} (${game.packs.get(a.pack)?.title ?? "compendium"})` : a.name, img: fullUrl(a.img || "icons/svg/mystery-man.svg") } : null);
     return {
       actors: () => game.actors.contents.filter((a) => canUse(a)).sort((a, b) => a.name.localeCompare(b.name)).map(info),
       actor: (id) => info(getActor(id)),
