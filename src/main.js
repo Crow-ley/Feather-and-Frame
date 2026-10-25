@@ -611,6 +611,25 @@ function needsApproval(wildcard) {
 const blobToData = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
 const dataToBlob = async (d) => (await fetch(d)).blob();
 
+/* What an image file really is, from its first bytes: png, jpeg, webp, gif, avif, or null. */
+function imageType(b) {
+  const s = (from, to) => String.fromCharCode(...b.slice(from, to));
+  if (b[0] === 0x89 && s(1, 4) === "PNG") return "png";
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return "jpeg";
+  if (s(0, 4) === "RIFF" && s(8, 12) === "WEBP") return "webp";
+  if (s(0, 4) === "GIF8") return "gif";
+  if (s(4, 8) === "ftyp" && /^avi[fs]$/.test(s(8, 12))) return "avif";
+  return null;
+}
+/* A data URL as an image blob, if its bytes are one of the allowed types and the browser can decode it. */
+async function checkedImage(data, types, error) {
+  const blob = await dataToBlob(data).catch(() => null);
+  const type = blob && imageType(new Uint8Array(await blob.slice(0, 12).arrayBuffer()));
+  if (!types.includes(type)) throw new Error(error);
+  try { (await createImageBitmap(blob)).close?.(); } catch (e) { throw new Error(error); }
+  return new Blob([blob], { type: `image/${type}` });
+}
+
 // SHA-256 of a string's UTF-8 bytes, as hex. crypto.subtle only exists on https and localhost,
 // and many Foundry servers run on plain http, so it is worked out here.
 const SHA = (() => {
@@ -738,8 +757,15 @@ async function handleRequest(reqId, userId, text) {
     if (tokens.some((t) => typeof t.data !== "string" || !t.data.startsWith("data:image/webp;base64,"))) throw new Error("A token image isn't a WebP image.");
     const portrait = body.portrait;
     if (portrait && (typeof portrait.data !== "string" || !/^data:image\/(png|jpeg|webp|gif|avif);base64,/.test(portrait.data))) throw new Error("The portrait isn't an image.");
-    const ext = portrait ? ((/^\.(png|jpe?g|webp|gif|avif)$/i.exec(portrait.ext ?? "")?.[0] ?? ".webp").toLowerCase()) : null;
     const edits = Array.isArray(body.edits) ? body.edits.filter((e) => validEdit(e?.json)) : null;
+    // A data URL's label says nothing about what is inside it, so every image is read and decoded
+    // here before the GM is asked, and the portrait keeps the extension of what it really is.
+    const tokenBlobs = [];
+    for (const t of tokens) tokenBlobs.push(await checkedImage(t.data, ["webp"], "A token image isn't a WebP image."));
+    const portraitBlob = portrait ? await checkedImage(portrait.data, ["png", "jpeg", "webp", "gif", "avif"], "The portrait isn't an image.") : null;
+    const ext = portraitBlob ? (portraitBlob.type === "image/jpeg" ? ".jpg" : `.${portraitBlob.type.slice(6)}`) : null;
+    const size = tokenBlobs.reduce((s, b) => s + b.size, 0) + (portraitBlob?.size ?? 0) + (edits ?? []).reduce((s, e) => s + e.json.length, 0);
+    if (size > MAX_BYTES) throw new Error("The files are too large.");
     const tpl = body.tpl === "big" ? "big" : "standard";
     const wildcard = body.wildcard ? { add: !!body.wildcard.add } : null;
 
@@ -771,12 +797,10 @@ async function handleRequest(reqId, userId, text) {
 
     const pkg = {
       actorId: actor.id, tpl, baked: !!body.baked, wildcard, updatePlaced: !!body.updatePlaced,
-      tokens: await Promise.all(tokens.map(async (t) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: await dataToBlob(t.data) }))),
-      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: await dataToBlob(portrait.data) } : null,
+      tokens: tokens.map((t, i) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: tokenBlobs[i] })),
+      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob } : null,
       edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,
     };
-    const size = pkg.tokens.reduce((s, t) => s + t.blob.size, 0) + (pkg.portrait?.blob.size ?? 0) + (pkg.edits ?? []).reduce((s, e) => s + e.json.length, 0);
-    if (size > MAX_BYTES) throw new Error("The files are too large.");
     const message = await applyPackage(actor, pkg);
     reply(true, `${message} Approved by ${game.user.name}.`);
   } catch (e) {
