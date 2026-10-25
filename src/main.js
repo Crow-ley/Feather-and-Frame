@@ -485,9 +485,11 @@ class FeatherFrameApp extends ApplicationV2 {
     // Foundry draws whichever image it picked inside the ring.
     update["prototypeToken.randomImg"] = !!wildPath;
     update[`flags.${ID}.wildcard`] = setInfo;
+    // src is the plain token image: a random set image, the portrait, or the token itself.
+    // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
     const tokenUpdate = (src) => baked
       ? { "ring.enabled": false, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }
-      : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : src, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
+      : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
     let placedSrc = () => tokenPath;
 
     const size = matchSize ? sizeInfo(actor) : null;
