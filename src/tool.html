@@ -436,10 +436,6 @@ header p { flex: 0 1 auto; }
         <div class="wild-list" id="sendWildList" hidden></div>
         <label class="check" id="sendWildAddRow" hidden><input type="checkbox" id="sendWildAdd"> <span id="sendWildAddLabel"></span></label>
       </div>
-      <div class="send-sec" id="sendSizeSec" hidden>
-        <label class="check"><input type="checkbox" id="sendSize"> <span id="sendSizeLabel"></span></label>
-        <p class="hint">Sets how many grid squares the token covers from the creature's size.</p>
-      </div>
       <label class="check"><input type="checkbox" id="sendEdits"> Save Edits to the Actor</label>
       <p class="hint">Keeps this token's edits with the actor, so you can load them back later and keep working.</p>
       <div class="send-sec" id="sendPlacedSec">
@@ -1629,12 +1625,6 @@ $("sendActor").onclick = () => {
   $("sendEdits").checked = prefs.saveEdits !== false;
   fillWild(id);
   $("sendPlacedSec").hidden = !!host.isPack?.(id);   // compendium actors have no tokens on scenes
-  const sz = host.actorSize?.(id) ?? null;
-  $("sendSizeSec").hidden = !sz;
-  if (sz) {
-    $("sendSizeLabel").textContent = "Match token size to creature size";
-    $("sendSize").checked = prefs.matchSize !== false;
-  }
   $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
   syncSendPortrait(); $("sendDlg").hidden = false; $("sendGo").focus();
 };
@@ -1677,7 +1667,6 @@ function syncPortraitFrom() {
 }
 $("sendWildList").addEventListener("change", syncPortraitFrom);
 $("sendWild").onchange = syncWild;
-$("sendSize").onchange = (e) => host?.savePref("matchSize", e.target.checked);
 $("sendEdits").onchange = (e) => host?.savePref("saveEdits", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
@@ -1710,7 +1699,7 @@ $("sendGo").onclick = async () => {
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
       portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
-      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked, saveEdits: $("sendEdits").checked,
+      saveEdits: $("sendEdits").checked,
       portraitFrom: $("sendPortraitFromRow").hidden ? null : $("sendPortraitFrom").value || null },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
     closeSend(); toast(msg); syncLoadEdits();

@@ -18,7 +18,6 @@ Hooks.once("init", () => {
   reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
-  game.settings.register(ID, "matchSize", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
 });
@@ -310,11 +309,10 @@ class FeatherFrameApp extends ApplicationV2 {
         if (a.pack && !packAllowed()) { ui.notifications.warn(PACK_OFF); return null; }
         return canUse(rememberPackActor(a)) ? info(a) : null;
       },
-      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), matchSize: game.settings.get(ID, "matchSize"), saveEdits: game.settings.get(ID, "saveEdits") }),
+      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), saveEdits: game.settings.get(ID, "saveEdits") }),
       savedEdits: (id) => savedEdits(getActor(id)).length,
       loadEdits: (id) => loadEdits(getActor(id)),
       wildcard: (id) => wildcardSet(getActor(id)),
-      actorSize: (id) => sizeInfo(getActor(id)),
       savePref: (key, value) => game.settings.set(ID, key, value),
       selected: (id) => { this.actor = getActor(id); },
       send: (opts, progress) => this.send(opts, progress),
@@ -431,7 +429,7 @@ class FeatherFrameApp extends ApplicationV2 {
     this.#prev = null;
   }
 
-  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false, saveEdits = false, portraitFrom = null }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, saveEdits = false, portraitFrom = null }, progress = () => {}) {
     const actor = getActor(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
     if (actor.pack && !packAllowed()) throw new Error(PACK_OFF);
@@ -492,8 +490,6 @@ class FeatherFrameApp extends ApplicationV2 {
       : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
     let placedSrc = () => tokenPath;
 
-    const size = matchSize ? sizeInfo(actor) : null;
-    if (size) { update["prototypeToken.width"] = size.w; update["prototypeToken.height"] = size.h; }
 
     let portraitPath = null;
     // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
@@ -536,9 +532,7 @@ class FeatherFrameApp extends ApplicationV2 {
       }
       for (const scene of game.scenes) {
         const ups = scene.tokens.filter((t) => t.actorId === actor.id).map((t) => {
-          const u = { _id: t.id, ...tokenUpdate(placedSrc()) };
-          if (size) { u.width = size.w; u.height = size.h; }
-          return u;
+          return { _id: t.id, ...tokenUpdate(placedSrc()) };
         });
         if (ups.length) { await scene.updateEmbeddedDocuments("Token", ups); placed += ups.length; }
       }
@@ -550,7 +544,6 @@ class FeatherFrameApp extends ApplicationV2 {
     const parts = [tpl, `scale ${scale}`];
     if (!baked) parts.push(`scale correction ${correction}`);
     if (wildPath) parts.push(`${sent.length} token${sent.length > 1 ? "s" : ""} ${wildcard.add && setInfo.count > sent.length ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
-    if (size) parts.push(`size ${size.w} × ${size.h}`);
     if (saveEdits) parts.push("edits saved");
     if (portraitPath) parts.push("portrait set");
     if (placed) parts.push(`${placed} placed token${placed > 1 ? "s" : ""} updated`);
@@ -591,14 +584,6 @@ async function loadEdits(actor) {
     } catch (err) { missing++; }
   }
   return { texts, missing };
-}
-
-/* How many grid squares the actor's size covers, when the game system says (dnd5e does). */
-function sizeInfo(actor) {
-  const key = actor?.system?.traits?.size, sizes = CONFIG.DND5E?.actorSizes;
-  if (!key || !sizes?.[key]) return null;
-  const n = sizes[key].token ?? 1;
-  return { label: game.i18n.localize(sizes[key].label), w: n, h: n };
 }
 
 // Actors are addressed by id in the world and by UUID in a compendium. Compendium actors
