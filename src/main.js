@@ -55,14 +55,29 @@ async function upload(file, folder) {
 }
 
 // Dynamic ring
-// The module ships no ring art. It reads the spritesheet of the ring picked in Foundry's
-// "Dynamic Token Ring" setting and draws its largest frame at 1024 px.
+// The module ships no ring art. It reads the spritesheet of the ring this actor's token uses and
+// draws it at 1024 px, coloured the way Foundry's ring shader would colour it.
 const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.getRoute(p));
-let ringSheet = null;
-function loadRingSheet() {
-  const path = CONFIG.Token.ring?.spritesheet;
+
+/* The spritesheet for an actor's ring. Multiple Rings lets each token pick a ring and replaces
+   Foundry's active ring with a combined sheet it builds in memory, so the real choice is read
+   from its token flag, then from the world's Dynamic Token Ring setting. */
+function ringSheetPath(actor) {
+  const rc = CONFIG.Token.ring;
+  let id = null;
+  if (game.modules.get("multiple-rings")?.active) {
+    id = foundry.utils.getProperty(actor?.prototypeToken ?? {}, "flags.multiple-rings.ringAppearance") || null;
+  }
+  if (!id) { try { id = game.settings.get("core", "dynamicTokenRing"); } catch (e) { id = null; } }
+  let path = null;
+  try { path = id ? rc.getConfig(id)?.spritesheet : null; } catch (e) { path = null; }
+  return path || rc?.spritesheet || null;
+}
+
+const ringSheets = new Map();
+function loadRingSheet(path) {
   if (!path) return Promise.resolve(null);
-  if (ringSheet?.path === path) return ringSheet.load;
+  if (ringSheets.has(path)) return ringSheets.get(path);
   const load = (async () => {
     const res = await fetch(routeOf(path));
     if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -71,15 +86,15 @@ function loadRingSheet() {
     img.crossOrigin = "anonymous";
     img.src = routeOf(path.replace(/[^/]*$/, "") + json.meta.image);
     await img.decode();
-    const frames = Object.entries(json.frames);
-    const rings = frames.filter(([name]) => !/bkg$/i.test(name)).sort((a, b) => b[1].sourceSize.w - a[1].sourceSize.w);
+    // Foundry skips "-bkg" and "-msk" frames when it lists rings; the largest ring frame is the sharpest.
+    const rings = Object.entries(json.frames).filter(([n]) => !n.includes("-bkg") && !n.includes("-msk"))
+      .sort((a, b) => b[1].sourceSize.w - a[1].sourceSize.w);
     if (!rings.length) return null;
     const [name, ring] = rings[0];
-    const bkg = json.frames[`${name}-bkg`] ?? frames.find(([n, f]) => /bkg$/i.test(n) && f.sourceSize.w === ring.sourceSize.w)?.[1] ?? null;
-    return { img, ring, bkg, config: json.config ?? {} };
+    return { img, ring, bkg: json.frames[`${name}-bkg`] ?? null, msk: json.frames[`${name}-msk`] ?? null, config: json.config ?? {} };
   })();
-  ringSheet = { path, load };
-  load.catch(() => { if (ringSheet?.load === load) ringSheet = null; });
+  ringSheets.set(path, load);
+  load.catch(() => ringSheets.delete(path));
   return load;
 }
 
@@ -97,57 +112,75 @@ function drawFrame(ctx, img, f, size) {
   } else ctx.drawImage(img, f.frame.x, f.frame.y, f.frame.w, f.frame.h, 0, 0, s.w, s.h);
   ctx.restore();
 }
-
-// The color Foundry uses for the ring band when the token has no ring color of its own.
-function dispositionColor(actor) {
-  const colors = CONFIG.Canvas.dispositionColors, tok = actor?.prototypeToken;
-  if (actor?.hasPlayerOwner) return colors.PARTY;
-  const key = Object.entries(CONST.TOKEN_DISPOSITIONS).find(([, v]) => v === tok?.disposition)?.[0];
-  return colors[key] ?? colors.NEUTRAL;
-}
-const css = (c) => (c == null || c === "" ? null : foundry.utils.Color.from(c).css);
-
-// Foundry's ring as a 1024 px PNG, colored the way the actor's token would be.
-// In the spritesheet the color band is drawn in pure red or magenta, with the red channel as
-// its strength. Foundry's shader paints the ring color there, so the same is done here per pixel.
-async function ringImage(actor) {
-  const sheet = await loadRingSheet();
-  if (!sheet) return null;
-  const size = 1024, half = size / 2, c = document.createElement("canvas");
+function framePixels(img, f, size) {
+  const c = document.createElement("canvas");
   c.width = c.height = size;
   const x = c.getContext("2d", { willReadFrequently: true });
-  const colors = actor?.prototypeToken?.ring?.colors ?? {};
-  if (sheet.bkg) {
-    const b = document.createElement("canvas");
-    b.width = b.height = size;
-    const bx = b.getContext("2d");
-    drawFrame(bx, sheet.img, sheet.bkg, size);
-    const tint = css(colors.background) ?? css(sheet.config.defaultBackgroundColor);
-    if (tint) {
-      bx.globalCompositeOperation = "multiply"; bx.fillStyle = tint; bx.fillRect(0, 0, size, size);
-      bx.globalCompositeOperation = "destination-in"; drawFrame(bx, sheet.img, sheet.bkg, size);
+  drawFrame(x, img, f, size);
+  return x.getImageData(0, 0, size, size);
+}
+
+/* Foundry's colour rule: the token's own colour, unless it is white or unset, in which case the
+   frame's colour, then the sheet's default. White when none is given. Returns [r, g, b] from 0 to 1. */
+function ringColour(own, frameColour, sheetColour) {
+  const C = foundry.utils.Color;
+  const c = C.from(own ?? 0xFFFFFF);
+  if (c.valid && Number(c) !== 0xFFFFFF) return c.rgb;
+  for (const d of [frameColour, sheetColour]) {
+    if (d == null || d === "") continue;
+    const x = C.from(d);
+    if (x.valid) return x.rgb;
+  }
+  return [1, 1, 1];
+}
+
+// Foundry's ring as a 1024 px PNG, coloured the way the actor's token would be. This follows
+// Foundry's ring shader: the background is tinted with an overlay blend, and inside the colour
+// band (or under the "-msk" mask frame, when a sheet has one) the ring colour is multiplied by
+// the art's red channel.
+async function ringImage(actor) {
+  const sheet = await loadRingSheet(ringSheetPath(actor));
+  if (!sheet) return null;
+  const size = 1024, half = size / 2;
+  const { img, ring, bkg, msk, config } = sheet;
+  const colours = actor?.prototypeToken?.ring?.colors ?? {};
+  const rc = ringColour(colours.ring, ring.ringColor, config.defaultRingColor);
+  const bc = ringColour(colours.background, ring.backgroundColor, config.defaultBackgroundColor);
+  const tinted = bc.some((v) => v !== 1);
+  const band = msk ? { startRadius: 0, endRadius: 0 } : (ring.colorBand ?? config.defaultColorBand ?? { startRadius: 0.59, endRadius: 0.7225 });
+
+  const out = new ImageData(size, size), o = out.data;
+  const R = framePixels(img, ring, size).data;
+  const B = bkg ? framePixels(img, bkg, size).data : null;
+  const M = msk ? framePixels(img, msk, size).data : null;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const i = (y * size + x) * 4;
+    // Background, overlay-blended with its tint (premultiplied while compositing)
+    let r = 0, g = 0, b = 0, a = 0;
+    if (B && B[i + 3]) {
+      a = B[i + 3] / 255;
+      let col = [B[i] / 255, B[i + 1] / 255, B[i + 2] / 255];
+      if (tinted) col = col.map((v, k) => (v < 0.5 ? 2 * v * bc[k] : 1 - 2 * (1 - v) * (1 - bc[k])));
+      r = col[0] * a; g = col[1] * a; b = col[2] * a;
     }
-    x.drawImage(b, 0, 0);
+    // Ring
+    const ra = R[i + 3] / 255;
+    if (ra) {
+      const dist = Math.hypot(x + 0.5 - half, y + 0.5 - half) / half;
+      let col = [R[i] / 255, R[i + 1] / 255, R[i + 2] / 255];
+      if (dist >= band.startRadius && dist < band.endRadius) col = rc.map((v) => v * col[0]);
+      r = col[0] * ra + r * (1 - ra); g = col[1] * ra + g * (1 - ra); b = col[2] * ra + b * (1 - ra); a = ra + a * (1 - ra);
+    }
+    // Mask: ring colour times the mask's red channel, laid over the top
+    if (M && M[i + 3]) {
+      const ma = M[i + 3] / 255, k = M[i] / 255;
+      r = rc[0] * k * ma + r * (1 - ma); g = rc[1] * k * ma + g * (1 - ma); b = rc[2] * k * ma + b * (1 - ma); a = ma + a * (1 - ma);
+    }
+    if (a > 0) { o[i] = (r / a) * 255; o[i + 1] = (g / a) * 255; o[i + 2] = (b / a) * 255; o[i + 3] = a * 255; }
   }
-  const r = document.createElement("canvas");
-  r.width = r.height = size;
-  const rx = r.getContext("2d", { willReadFrequently: true });
-  drawFrame(rx, sheet.img, sheet.ring, size);
-  const band = sheet.config.defaultColorBand ?? { startRadius: 0.666, endRadius: 0.7225 };
-  const color = foundry.utils.Color.from(css(colors.ring) ?? css(sheet.config.defaultRingColor) ?? css(dispositionColor(actor)));
-  const [cr, cg, cb] = color.rgb.map((v) => v * 255);
-  const r0 = band.startRadius * half - 1, r1 = band.endRadius * half + 1, lo = Math.floor(half - r1), n = Math.ceil(r1 * 2);
-  const data = rx.getImageData(lo, lo, n, n), d = data.data;
-  for (let y = 0; y < n; y++) for (let xx = 0; xx < n; xx++) {
-    const dist = Math.hypot(lo + xx + 0.5 - half, lo + y + 0.5 - half);
-    if (dist < r0 || dist > r1) continue;
-    const i = (y * n + xx) * 4;
-    if (d[i + 1] > d[i] * 0.25) continue; // metal and shading in the band stay as they are
-    const k = d[i] / 255;
-    d[i] = cr * k; d[i + 1] = cg * k; d[i + 2] = cb * k;
-  }
-  rx.putImageData(data, lo, lo);
-  x.drawImage(r, 0, 0);
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  c.getContext("2d").putImageData(out, 0, 0);
   return c.toDataURL("image/png");
 }
 
