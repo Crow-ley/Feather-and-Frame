@@ -25,8 +25,8 @@ It writes everything to `dist/`:
 
 ## Release
 
-1. Raise `version` in `module.json` (for example 0.9.14 to 0.9.15).
+1. Raise `version` in `module.json` (for example 1.0.0 to 1.0.1).
 2. Run `node build.mjs`.
 3. On GitHub, draft a release tagged with the new version and attach `dist/module.json` and `dist/feather-and-frame.zip`.
 
-The script and style names in the build carry the version (`main-0.9.15.js`), so Foundry can't keep running a cached older copy after an update.
+The script and style names in the build carry the version (`main-1.0.1.js`), so Foundry can't keep running a cached older copy after an update.
