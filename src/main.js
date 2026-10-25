@@ -929,7 +929,7 @@ function openApp(actor) {
 // Update check
 // The module isn't listed on Foundry's package site yet, so it checks its GitHub releases itself.
 // Runs once per session, for the GM only, the first time the window opens.
-const REPO = "Crow-ley/feather-and-frame";
+const REPO = "Crow-ley/Feather-and-Frame";
 const MANIFEST = `https://github.com/${REPO}/releases/latest/download/module.json`;
 let updateChecked = false;
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
