@@ -18,6 +18,7 @@ Hooks.once("init", () => {
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "matchSize", { scope: "client", config: false, type: Boolean, default: true });
+  game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
 });
 
@@ -265,7 +266,9 @@ class FeatherFrameApp extends ApplicationV2 {
         const a = await fromUuid(data.uuid);
         return a && canUse(a) ? info(a) : null;
       },
-      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), matchSize: game.settings.get(ID, "matchSize") }),
+      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), matchSize: game.settings.get(ID, "matchSize"), saveEdits: game.settings.get(ID, "saveEdits") }),
+      savedEdits: (id) => savedEdits(game.actors.get(id)).length,
+      loadEdits: (id) => loadEdits(game.actors.get(id)),
       wildcard: (id) => wildcardSet(game.actors.get(id)),
       actorSize: (id) => sizeInfo(game.actors.get(id)),
       savePref: (key, value) => game.settings.set(ID, key, value),
@@ -384,7 +387,7 @@ class FeatherFrameApp extends ApplicationV2 {
     this.#prev = null;
   }
 
-  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false, saveEdits = false }, progress = () => {}) {
     const actor = game.actors.get(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
     if (!canUse(actor)) throw new Error("You can't change this actor.");
@@ -455,6 +458,21 @@ class FeatherFrameApp extends ApplicationV2 {
       if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
     }
 
+    // Saved edits: one JSON file per token in <token folder>/edits, listed on the actor.
+    if (saveEdits) {
+      const editFolder = `${cleanFolder(folder)}/edits`;
+      const saved = [];
+      for (const [n, item] of sent.entries()) {
+        progress(sent.length > 1 ? `Saving edits ${n + 1} of ${sent.length}...` : "Saving edits...");
+        const json = await tool.exportEdit(item.id);
+        const path = await upload(new File([json], `${safeName(item.outName)}-${item.id}.json`, { type: "application/json" }), editFolder);
+        saved.push({ id: item.id, name: item.outName, path: path.replace(/\?.*$/, "") });
+      }
+      // Adding to a wildcard set keeps the edits already saved for the set.
+      const keep = wildcard?.add ? savedEdits(actor).filter((e) => !saved.some((s) => s.id === e.id)) : [];
+      update[`flags.${ID}.edits`] = [...keep, ...saved];
+    }
+
     progress(`Updating ${actor.name}...`);
     await actor.update(update);
 
@@ -482,6 +500,7 @@ class FeatherFrameApp extends ApplicationV2 {
     if (!baked) parts.push(`scale correction ${correction}`);
     if (wildPath) parts.push(`${sent.length} token${sent.length > 1 ? "s" : ""} ${wildcard.add && setInfo.count > sent.length ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
     if (size) parts.push(`size ${size.w} × ${size.h}`);
+    if (saveEdits) parts.push("edits saved");
     if (portraitPath) parts.push("portrait set");
     if (placed) parts.push(`${placed} placed token${placed > 1 ? "s" : ""} updated`);
     return `Sent to ${actor.name}: ${parts.join(", ")}.`;
@@ -502,6 +521,25 @@ async function listSet(setFolder, fallback) {
     const res = await FP().browse(fileSource(), setFolder, { extensions: [".webp"] });
     return res?.files?.length ? res.files : fallback;
   } catch (e) { return fallback; }
+}
+
+/* Saved edits listed on an actor, and loading their files back as text for the tool. */
+function savedEdits(actor) {
+  const list = actor?.getFlag?.(ID, "edits");
+  return Array.isArray(list) ? list.filter((e) => e?.path) : [];
+}
+async function loadEdits(actor) {
+  if (!actor || !canUse(actor)) throw new Error("You can't open this actor's edits.");
+  const texts = [];
+  let missing = 0;
+  for (const e of savedEdits(actor)) {
+    try {
+      const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
+      if (!res.ok) throw new Error(res.status);
+      texts.push(await res.text());
+    } catch (err) { missing++; }
+  }
+  return { texts, missing };
 }
 
 /* How many grid squares the actor's size covers, when the game system says (dnd5e does). */

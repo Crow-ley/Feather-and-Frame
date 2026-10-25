@@ -149,7 +149,8 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .actor-pick.over { border-color: var(--brass); background: var(--raise); }
 .actor-pick img { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; flex: none; background: var(--bg); }
 .actor-pick select { flex: 1; min-width: 0; height: 36px; font-size: .95rem; }
-.work.list-hidden .actor-pick { display: none; }
+.work.list-hidden .actor-pick, .work.list-hidden .load-edits { display: none !important; }
+.load-edits { width: 100%; margin-top: -4px; }
 .send-box { width: min(460px, 100%); }
 .btn.mini { padding: 1px 8px; font-size: 11px; min-height: 0; margin-left: 6px; }
 .send-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; overflow-y: auto; }
@@ -202,6 +203,7 @@ header p { flex: 0 1 auto; }
       <img id="actorImg" alt="">
       <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
     </div>
+    <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Saved Edits</button>
     <section class="pane list" aria-label="Tokens">
       <button class="list-tab" id="listShow" title="Show the token list"><b>›</b><span>Tokens</span></button>
       <div class="list-head"><span class="label">Tokens <span id="count">0</span></span><button class="icon-btn" id="listHide" title="Hide the token list">‹ Hide</button></div>
@@ -425,6 +427,8 @@ header p { flex: 0 1 auto; }
         <label class="check"><input type="checkbox" id="sendSize"> <span id="sendSizeLabel"></span></label>
         <p class="hint">Sets how many grid squares the token covers from the creature's size.</p>
       </div>
+      <label class="check"><input type="checkbox" id="sendEdits"> Save Edits to the Actor</label>
+      <p class="hint">Keeps this token's edits with the actor, so you can load them back later and keep working.</p>
       <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
       <p class="hint">Also changes copies of this actor already on scenes.</p>
       <p class="hint info send-status" id="sendStatus"></p>
@@ -1565,6 +1569,7 @@ function setActor(id) {
   $("actorImg").style.visibility = a ? "visible" : "hidden";
   host.selected(a?.id ?? "");
   foundryRing(a?.id ?? "");
+  syncLoadEdits();
   if (mapPrev) setMapPrev(!!a, true);
 }
 /* Ask Foundry for its ring, colored for this actor, and use it as the default ring. */
@@ -1605,6 +1610,7 @@ $("sendActor").onclick = () => {
   $("sendTitle").textContent = "Send to " + (host.actor(id)?.name ?? "Actor");
   $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
   sendPortraitFile = null;
+  $("sendEdits").checked = prefs.saveEdits !== false;
   fillWild(id);
   const sz = host.actorSize?.(id) ?? null;
   $("sendSizeSec").hidden = !sz;
@@ -1642,6 +1648,7 @@ function syncWild() {
 }
 $("sendWild").onchange = syncWild;
 $("sendSize").onchange = (e) => host?.savePref("matchSize", e.target.checked);
+$("sendEdits").onchange = (e) => host?.savePref("saveEdits", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
   $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
@@ -1672,9 +1679,9 @@ $("sendGo").onclick = async () => {
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
       portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
-      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked },
+      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked, saveEdits: $("sendEdits").checked },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
-    closeSend(); toast(msg);
+    closeSend(); toast(msg); syncLoadEdits();
     if (mapPrev) setMapPrev(true, true);
   } catch (err) {
     st.textContent = "Couldn't send: " + (err?.message || err); st.className = "hint info send-status err";
@@ -1730,6 +1737,49 @@ $("helpDm").onclick = async () => {
 };
 
 /* API used by the Foundry module. */
-window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, flush: persistNow, attachHost, setActor };
+// Saved edits: a token's edit state as one JSON file the module keeps with the actor.
+// The images (and selection masks) are written in as data URLs so the file stands alone.
+const EDIT_FORMAT = "feather-and-frame-edit";
+const blobToData = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+const fileToJson = async (f) => (f ? { name: f.name || "image", type: f.type || "image/png", data: await blobToData(f) } : null);
+const jsonToFile = async (o) => (o ? new File([await (await fetch(o.data)).blob()], o.name, { type: o.type }) : null);
+async function exportEdit(id) {
+  const it = items.find((i) => i.id === id); if (!it) throw new Error("That token isn't in the list any more.");
+  const snap = await serialize(it);
+  const strokes = await Promise.all(snap.strokes.map(async (st) => (st.clip ? { ...st, clip: { invert: st.clip.invert, png: await blobToData(st.clip.png) } } : st)));
+  return JSON.stringify({ format: EDIT_FORMAT, version: 1, item: { ...snap, saved: false, file: await fileToJson(snap.file), origFile: await fileToJson(snap.origFile), strokes } });
+}
+async function importEdit(text) {
+  const doc = JSON.parse(text);
+  if (doc?.format !== EDIT_FORMAT || !doc.item?.file) throw new Error("not a saved edit");
+  const snap = { ...doc.item, file: await jsonToFile(doc.item.file), origFile: await jsonToFile(doc.item.origFile) };
+  snap.strokes = await Promise.all((snap.strokes || []).map(async (st) => (st.clip ? { ...st, clip: { invert: st.clip.invert, png: await (await fetch(st.clip.png)).blob() } } : st)));
+  return restore(snap);
+}
+function syncLoadEdits() {
+  const n = host?.savedEdits?.($("actorSel").value) ?? 0;
+  $("loadEdits").hidden = !n;
+  $("loadEdits").textContent = n > 1 ? `Load Saved Edits (${n})` : "Load Saved Edits";
+}
+$("loadEdits").onclick = async () => {
+  const btn = $("loadEdits"); btn.disabled = true;
+  try {
+    const { texts, missing } = await host.loadEdits($("actorSel").value);
+    let added = 0, first = null;
+    for (const text of texts) {
+      let it; try { it = await importEdit(text); } catch (e) { continue; }
+      const have = items.find((i) => i.id === it.id);
+      if (have) { first ??= have; continue; }   // already in the list: just go to it
+      items.push(it); addRow(it); added++; first ??= it;
+    }
+    updateListState(); persistSoon();
+    if (first) select(first);
+    toast(added ? `Loaded ${added} saved edit${added > 1 ? "s" : ""}.${missing ? ` ${missing} couldn't be found.` : ""}`
+      : first ? "Those edits are already in the list." : "Couldn't load the saved edits. The files may have been moved or deleted.", !first);
+  } catch (e) { toast("Couldn't load the saved edits: " + (e?.message || e), true); }
+  finally { btn.disabled = false; }
+};
+
+window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, flush: persistNow, attachHost, setActor, exportEdit };
 loadKeptList();
 </script>

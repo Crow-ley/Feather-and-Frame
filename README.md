@@ -24,6 +24,7 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 - Send to Actor uploads the token, turns on the ring and sets the scale values for you. It can also set the portrait (the original image or another one you pick) and update tokens already placed on scenes.
 - Wildcard sets: send several tokens as one set and Foundry gives each token you place a random one, ring included. You can add more to a set later.
 - Matches the token's grid size to the creature's size (dnd5e), so a Large creature gets 2 × 2.
+- Saved edits: each send can keep the token's edits with the actor. Next time, pick the actor and click Load Saved Edits to carry on where you left off.
 - Preview on Map shows your edits on the actor's token in the open scene before you send. Only you see it.
 - Drag tokens from the list next to the one you're editing to compare them.
 - Ctrl+Z undoes brush strokes, moves and scaling.
