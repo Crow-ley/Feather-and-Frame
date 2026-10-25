@@ -43,6 +43,10 @@ The only request the module makes outside your Foundry server is the update chec
 
 The fonts, icons and images ship with the module. The two fonts, IM Fell English SC and Alegreya Sans, are under the SIL Open Font License; the license files are in `assets/fonts`.
 
+## Credits
+
+Code written with help from Claude (AI).
+
 ## Help
 
 If something isn't working, join the [Burn Bin Inn Discord server](https://discord.gg/HXHdzXR6mC) or send me a DM on Discord at .mordecai.
