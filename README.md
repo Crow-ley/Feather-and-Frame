@@ -22,6 +22,8 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 - Custom rings, with a saved ring library
 - An option to bake the ring into the image for VTTs without dynamic rings
 - Send to Actor uploads the token, turns on the ring and sets the scale values for you. It can also set the portrait (the original image or another one you pick) and update tokens already placed on scenes.
+- Wildcard sets: send several tokens as one set and Foundry gives each token you place a random one, ring included. You can add more to a set later.
+- Matches the token's grid size to the creature's size (dnd5e), so a Large creature gets 2 × 2.
 - Preview on Map shows your edits on the actor's token in the open scene before you send. Only you see it.
 - Drag tokens from the list next to the one you're editing to compare them.
 - Ctrl+Z undoes brush strokes, moves and scaling.

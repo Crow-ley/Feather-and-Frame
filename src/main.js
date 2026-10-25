@@ -17,6 +17,7 @@ Hooks.once("init", () => {
   reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
+  game.settings.register(ID, "matchSize", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
 });
 
@@ -264,7 +265,9 @@ class FeatherFrameApp extends ApplicationV2 {
         const a = await fromUuid(data.uuid);
         return a && canUse(a) ? info(a) : null;
       },
-      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced") }),
+      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), matchSize: game.settings.get(ID, "matchSize") }),
+      wildcard: (id) => wildcardSet(game.actors.get(id)),
+      actorSize: (id) => sizeInfo(game.actors.get(id)),
       savePref: (key, value) => game.settings.set(ID, key, value),
       selected: (id) => { this.actor = game.actors.get(id) ?? null; },
       send: (opts, progress) => this.send(opts, progress),
@@ -381,40 +384,75 @@ class FeatherFrameApp extends ApplicationV2 {
     this.#prev = null;
   }
 
-  async send({ actorId, usePortrait, portraitFile, updatePlaced }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false }, progress = () => {}) {
     const actor = game.actors.get(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
     if (!canUse(actor)) throw new Error("You can't change this actor.");
     const it = tool?.current();
     if (!it) throw new Error("Load an image first.");
+    if (wildcard && !game.user.isGM && !game.user.can("FILES_BROWSE"))
+      throw new Error("Wildcard sets need the Use File Browser permission. Ask your GM to turn it on for players.");
     await this.previewStop();
 
-    progress("Rendering token...");
-    const blob = await tool.encode(it);
-    if (blob.type !== "image/webp") throw new Error("This browser can't write WebP files.");
-    const base = safeName(it.outName);
     const baked = !!tool.baked?.();
-    const tokenPath = await upload(new File([blob], `${base}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), game.settings.get(ID, "tokenFolder"));
-
-    // Baked tokens are static images; Big Chungus ones need scale 2.
     const { big, scale, correction } = this.#tokenConfig(it.tpl, baked);
+    const folder = game.settings.get(ID, "tokenFolder");
+    const encodeOne = async (item) => {
+      const blob = await tool.encode(item);
+      if (blob.type !== "image/webp") throw new Error("This browser can't write WebP files.");
+      return blob;
+    };
+
+    // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
+    let tokenPath, wildPath = null, setPaths = [], setInfo = null, sent = [it];
+    if (!wildcard) {
+      progress("Rendering token...");
+      const blob = await encodeOne(it);
+      tokenPath = await upload(new File([blob], `${safeName(it.outName)}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), folder);
+    } else {
+      sent = tool.items().filter((i) => wildcard.ids.includes(i.id));
+      if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Big Chungus tokens.");
+      const existing = wildcard.add ? wildcardSet(actor) : null;
+      if (!sent.length || (sent.length < 2 && !existing)) throw new Error("A new wildcard set needs at least two tokens.");
+      const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
+      const stamp = Date.now().toString(36);
+      for (const [n, item] of sent.entries()) {
+        progress(`Rendering token ${n + 1} of ${sent.length}...`);
+        const blob = await encodeOne(item);
+        setPaths.push(await upload(new File([blob], `${safeName(item.outName)}-${stamp}-${n + 1}.webp`, { type: "image/webp" }), setFolder));
+      }
+      // The wildcard goes in the folder the files actually landed in (on the Forge that is a full URL).
+      const landed = setPaths[0].replace(/\?.*$/, "").replace(/\/[^/]*$/, "");
+      wildPath = `${landed}/*.webp`;
+      setInfo = { folder: setFolder, wild: wildPath, count: (existing?.count ?? 0) + sent.length };
+      tokenPath = setPaths[0];
+    }
 
     const update = baked
-      ? { "prototypeToken.ring.enabled": false, "prototypeToken.texture.src": tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale }
-      : { "prototypeToken.ring.enabled": true, "prototypeToken.ring.subject.texture": tokenPath, "prototypeToken.ring.subject.scale": correction,
-          "prototypeToken.texture.src": tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale };
-    const tokenUpdate = baked
-      ? { "ring.enabled": false, "texture.src": tokenPath, "texture.scaleX": scale, "texture.scaleY": scale }
-      : { "ring.enabled": true, "ring.subject.texture": tokenPath, "ring.subject.scale": correction, "texture.src": tokenPath, "texture.scaleX": scale, "texture.scaleY": scale };
+      ? { "prototypeToken.ring.enabled": false, "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale }
+      : { "prototypeToken.ring.enabled": true, "prototypeToken.ring.subject.texture": wildPath ? null : tokenPath, "prototypeToken.ring.subject.scale": correction,
+          "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale };
+    // A single token turns wildcards off; a set turns them on. With no ring subject image,
+    // Foundry draws whichever image it picked inside the ring.
+    update["prototypeToken.randomImg"] = !!wildPath;
+    update[`flags.${ID}.wildcard`] = setInfo;
+    const tokenUpdate = (src) => baked
+      ? { "ring.enabled": false, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }
+      : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : src, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
+    let placedSrc = () => tokenPath;
+
+    const size = matchSize ? sizeInfo(actor) : null;
+    if (size) { update["prototypeToken.width"] = size.w; update["prototypeToken.height"] = size.h; }
 
     let portraitPath = null;
     const f = portraitFile ?? (usePortrait ? (it.origFile ?? it.file) : null);
     if (f) {
       progress("Uploading the portrait...");
       const ext = (f.name.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase();
-      portraitPath = await upload(new File([f], `${base}${ext}`, { type: f.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+      portraitPath = await upload(new File([f], `${safeName(it.outName)}${ext}`, { type: f.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
       update.img = portraitPath;
-      if (!baked) { update["prototypeToken.texture.src"] = portraitPath; tokenUpdate["texture.src"] = portraitPath; }
+      // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
+      if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
     }
 
     progress(`Updating ${actor.name}...`);
@@ -422,17 +460,56 @@ class FeatherFrameApp extends ApplicationV2 {
 
     let placed = 0;
     if (updatePlaced) {
+      if (wildPath) {
+        // Placed tokens each get a random image from the whole set, older ones included.
+        const pool = setInfo.count > sent.length ? await listSet(setInfo.folder, setPaths) : setPaths;
+        placedSrc = () => pool[Math.floor(Math.random() * pool.length)];
+      }
       for (const scene of game.scenes) {
-        const ups = scene.tokens.filter((t) => t.actorId === actor.id).map((t) => ({ _id: t.id, ...tokenUpdate }));
+        const ups = scene.tokens.filter((t) => t.actorId === actor.id).map((t) => {
+          const u = { _id: t.id, ...tokenUpdate(placedSrc()) };
+          if (size) { u.width = size.w; u.height = size.h; }
+          return u;
+        });
         if (ups.length) { await scene.updateEmbeddedDocuments("Token", ups); placed += ups.length; }
       }
     }
 
-    tool.markSaved?.(it);
-    ui.notifications.info(`${TITLE}: token sent to ${actor.name}.`);
+    for (const item of sent) tool.markSaved?.(item);
+    ui.notifications.info(`${TITLE}: ${wildPath ? "wildcard set" : "token"} sent to ${actor.name}.`);
     const tpl = (big ? "Big Chungus" : "Standard") + (baked ? ", ring baked in" : "");
-    return `Sent to ${actor.name}: ${tpl}, scale ${scale}${baked ? "" : `, scale correction ${correction}`}${portraitPath ? ", portrait set" : ""}${placed ? `, ${placed} placed token${placed > 1 ? "s" : ""} updated` : ""}.`;
+    const parts = [tpl, `scale ${scale}`];
+    if (!baked) parts.push(`scale correction ${correction}`);
+    if (wildPath) parts.push(`${sent.length} token${sent.length > 1 ? "s" : ""} ${wildcard.add && setInfo.count > sent.length ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
+    if (size) parts.push(`size ${size.w} × ${size.h}`);
+    if (portraitPath) parts.push("portrait set");
+    if (placed) parts.push(`${placed} placed token${placed > 1 ? "s" : ""} updated`);
+    return `Sent to ${actor.name}: ${parts.join(", ")}.`;
   }
+}
+
+/* The wildcard set this module made for an actor, if it is still in use. */
+function wildcardSet(actor) {
+  const info = actor?.getFlag?.(ID, "wildcard");
+  const tok = actor?.prototypeToken;
+  if (!info?.folder || !tok?.randomImg || tok.texture?.src !== info.wild) return null;
+  return info;
+}
+
+/* Every image in a wildcard set's folder. Falls back to the files just uploaded. */
+async function listSet(setFolder, fallback) {
+  try {
+    const res = await FP().browse(fileSource(), setFolder, { extensions: [".webp"] });
+    return res?.files?.length ? res.files : fallback;
+  } catch (e) { return fallback; }
+}
+
+/* How many grid squares the actor's size covers, when the game system says (dnd5e does). */
+function sizeInfo(actor) {
+  const key = actor?.system?.traits?.size, sizes = CONFIG.DND5E?.actorSizes;
+  if (!key || !sizes?.[key]) return null;
+  const n = sizes[key].token ?? 1;
+  return { label: game.i18n.localize(sizes[key].label), w: n, h: n };
 }
 
 /* GMs always; players only if allowed and only for owned actors. */

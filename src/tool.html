@@ -152,7 +152,13 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .work.list-hidden .actor-pick { display: none; }
 .send-box { width: min(460px, 100%); }
 .btn.mini { padding: 1px 8px; font-size: 11px; min-height: 0; margin-left: 6px; }
-.send-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; }
+.send-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; overflow-y: auto; }
+.send-sec { display: flex; flex-direction: column; gap: 6px; align-items: center; width: 100%; }
+.wild-list { display: flex; flex-direction: column; gap: 4px; width: 100%; max-height: 210px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; text-align: left; margin-bottom: 6px; }
+.wild-row { display: flex; align-items: center; gap: 8px; font-size: .9rem; cursor: pointer; }
+.wild-row canvas { width: 36px; height: 36px; border-radius: 4px; background: #0d0b0f; flex: none; }
+.wild-row input { accent-color: var(--brass); }
+.wild-row.off { opacity: .5; cursor: default; }
 .send-body .check { justify-content: center; font-size: .95rem; }
 .send-body .hint { margin-bottom: 6px; }
 .send-status { min-height: 1.2em; }
@@ -409,6 +415,16 @@ header p { flex: 0 1 auto; }
       </div>
       <p class="hint info" id="sendPortraitName" hidden><span id="sendPortraitLabel"></span> <button class="btn mini" id="sendPortraitClear" title="Stop using this portrait">Clear</button></p>
       <p class="hint" id="sendPortraitHint">Pick another image for the portrait, like the mist version. It's used instead of the original image.</p>
+      <div class="send-sec" id="sendWildSec" hidden>
+        <label class="check"><input type="checkbox" id="sendWild"> Send as a Wildcard Set</label>
+        <p class="hint">Uploads the ticked tokens into one folder and turns on Foundry's random wildcard images, so each token you place gets one of them at random.</p>
+        <div class="wild-list" id="sendWildList" hidden></div>
+        <label class="check" id="sendWildAddRow" hidden><input type="checkbox" id="sendWildAdd"> <span id="sendWildAddLabel"></span></label>
+      </div>
+      <div class="send-sec" id="sendSizeSec" hidden>
+        <label class="check"><input type="checkbox" id="sendSize"> <span id="sendSizeLabel"></span></label>
+        <p class="hint">Sets how many grid squares the token covers from the creature's size.</p>
+      </div>
       <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
       <p class="hint">Also changes copies of this actor already on scenes.</p>
       <p class="hint info send-status" id="sendStatus"></p>
@@ -1589,9 +1605,43 @@ $("sendActor").onclick = () => {
   $("sendTitle").textContent = "Send to " + (host.actor(id)?.name ?? "Actor");
   $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
   sendPortraitFile = null;
+  fillWild(id);
+  const sz = host.actorSize?.(id) ?? null;
+  $("sendSizeSec").hidden = !sz;
+  if (sz) {
+    $("sendSizeLabel").textContent = `Match token size to creature size (${sz.label}, ${sz.w} × ${sz.h})`;
+    $("sendSize").checked = prefs.matchSize !== false;
+  }
   $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
   syncSendPortrait(); $("sendDlg").hidden = false; $("sendGo").focus();
 };
+/* Wildcard set: every token in the list with the same template as the one being edited can join. */
+let wildInfo = null;
+function fillWild(id) {
+  wildInfo = host.wildcard?.(id) ?? null;
+  $("sendWildSec").hidden = !(items.length > 1 || wildInfo);
+  const list = $("sendWildList"); list.replaceChildren();
+  for (const it of items) {
+    const ok = it.tpl === cur.tpl;
+    const row = document.createElement("label"); row.className = "wild-row" + (ok ? "" : " off");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = it.id; cb.checked = ok; cb.disabled = !ok;
+    const c = document.createElement("canvas"); c.width = c.height = 72;
+    c.getContext("2d").drawImage(renderToken(it, 144), 0, 0, 72, 72);
+    const nm = document.createElement("span");
+    nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Big Chungus" : "Standard"}, can't mix templates)`);
+    row.append(cb, c, nm); list.append(row);
+  }
+  $("sendWildAddLabel").textContent = wildInfo ? `Add to the existing set (${wildInfo.count} token${wildInfo.count === 1 ? "" : "s"})` : "";
+  $("sendWildAdd").checked = !!wildInfo;
+  $("sendWild").checked = false; syncWild();
+}
+function syncWild() {
+  const on = $("sendWild").checked;
+  $("sendWildList").hidden = !on; $("sendWildAddRow").hidden = !on || !wildInfo;
+  $("sendGo").textContent = on ? "Send Wildcard Set" : "Send to Actor";
+}
+$("sendWild").onchange = syncWild;
+$("sendSize").onchange = (e) => host?.savePref("matchSize", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
   $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
@@ -1608,10 +1658,21 @@ $("sendDlg").addEventListener("click", (e) => { if (e.target === $("sendDlg") &&
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sendDlg").hidden && !$("sendGo").disabled) { closeSend(); e.stopImmediatePropagation(); } }, true);
 $("sendGo").onclick = async () => {
   const st = $("sendStatus");
+  let wildcard = null;
+  if ($("sendWild").checked) {
+    const ids = [...$("sendWildList").querySelectorAll("input:checked")].map((cb) => cb.value);
+    const add = !!wildInfo && $("sendWildAdd").checked;
+    if (!ids.length || (ids.length < 2 && !add)) {
+      st.textContent = "Tick at least two tokens for a new set, or one to add to an existing set."; st.className = "hint info send-status err";
+      return;
+    }
+    wildcard = { ids, add };
+  }
   $("sendGo").disabled = $("sendCancel").disabled = true;
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
-      portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked },
+      portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
+      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
     closeSend(); toast(msg);
     if (mapPrev) setMapPrev(true, true);
