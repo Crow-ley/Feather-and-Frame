@@ -13,6 +13,7 @@ Hooks.once("init", () => {
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or use the crow on its sheet. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
   reg("checkUpdates", { name: "Check GitHub for updates", hint: "Once per session, when a GM opens the window, ask GitHub whether a newer version is out. This sends one request to api.github.com and nothing else.", type: Boolean, default: true });
   reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
@@ -231,7 +232,7 @@ class FeatherFrameApp extends ApplicationV2 {
     const attach = () => {
       if (this.element !== el || !el.isConnected) return;
       const tool = this.tool;
-      if (tool?.attachHost) return tool.attachHost(this.#host(), this.actor?.id);
+      if (tool?.attachHost) return tool.attachHost(this.#host(), keyOf(this.actor));
       if (Date.now() - started > 8000) return ui.notifications.error(`${TITLE}: the tool didn't start. This server may block it from running inside Foundry windows.`);
       setTimeout(attach, 100);
     };
@@ -251,33 +252,36 @@ class FeatherFrameApp extends ApplicationV2 {
 
   setActor(actor) {
     this.actor = actor;
-    this.tool?.setActor?.(actor?.id ?? "");
+    this.tool?.setActor?.(keyOf(actor));
   }
 
   /* Everything the tool needs from Foundry. */
   #host() {
-    const info = (a) => (a ? { id: a.id, name: a.name, img: a.img || "icons/svg/mystery-man.svg" } : null);
+    const info = (a) => (a ? { id: keyOf(a), name: a.pack ? `${a.name} (${game.packs.get(a.pack)?.title ?? "compendium"})` : a.name, img: a.img || "icons/svg/mystery-man.svg" } : null);
     return {
       actors: () => game.actors.contents.filter((a) => canUse(a)).sort((a, b) => a.name.localeCompare(b.name)).map(info),
-      actor: (id) => info(game.actors.get(id)),
+      actor: (id) => info(getActor(id)),
+      isPack: (id) => !!getActor(id)?.pack,
       fromDrop: async (text) => {
         let data; try { data = JSON.parse(text); } catch (e) { return null; }
         if (data?.type !== "Actor") return null;
         const a = await fromUuid(data.uuid);
-        return a && canUse(a) ? info(a) : null;
+        if (!(a instanceof Actor)) return null;
+        if (a.pack && !packAllowed()) { ui.notifications.warn(PACK_OFF); return null; }
+        return canUse(rememberPackActor(a)) ? info(a) : null;
       },
       prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), matchSize: game.settings.get(ID, "matchSize"), saveEdits: game.settings.get(ID, "saveEdits") }),
-      savedEdits: (id) => savedEdits(game.actors.get(id)).length,
-      loadEdits: (id) => loadEdits(game.actors.get(id)),
-      wildcard: (id) => wildcardSet(game.actors.get(id)),
-      actorSize: (id) => sizeInfo(game.actors.get(id)),
+      savedEdits: (id) => savedEdits(getActor(id)).length,
+      loadEdits: (id) => loadEdits(getActor(id)),
+      wildcard: (id) => wildcardSet(getActor(id)),
+      actorSize: (id) => sizeInfo(getActor(id)),
       savePref: (key, value) => game.settings.set(ID, key, value),
-      selected: (id) => { this.actor = game.actors.get(id) ?? null; },
+      selected: (id) => { this.actor = getActor(id); },
       send: (opts, progress) => this.send(opts, progress),
       previewStart: (id) => this.previewStart(id),
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
-      ring: (id) => ringImage(game.actors.get(id) ?? null),
+      ring: (id) => ringImage(getActor(id)),
     };
   }
 
@@ -388,9 +392,11 @@ class FeatherFrameApp extends ApplicationV2 {
   }
 
   async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false, saveEdits = false }, progress = () => {}) {
-    const actor = game.actors.get(actorId), tool = this.tool;
+    const actor = getActor(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
+    if (actor.pack && !packAllowed()) throw new Error(PACK_OFF);
     if (!canUse(actor)) throw new Error("You can't change this actor.");
+    if (actor.pack && game.packs.get(actor.pack)?.locked) throw new Error(`The ${game.packs.get(actor.pack).title} compendium is locked. Unlock it, then send again.`);
     const it = tool?.current();
     if (!it) throw new Error("Load an image first.");
     if (wildcard && !game.user.isGM && !game.user.can("FILES_BROWSE"))
@@ -476,8 +482,9 @@ class FeatherFrameApp extends ApplicationV2 {
     progress(`Updating ${actor.name}...`);
     await actor.update(update);
 
+    // Tokens on scenes belong to world actors, never to a compendium entry.
     let placed = 0;
-    if (updatePlaced) {
+    if (updatePlaced && !actor.pack) {
       if (wildPath) {
         // Placed tokens each get a random image from the whole set, older ones included.
         const pool = setInfo.count > sent.length ? await listSet(setInfo.folder, setPaths) : setPaths;
@@ -550,14 +557,26 @@ function sizeInfo(actor) {
   return { label: game.i18n.localize(sizes[key].label), w: n, h: n };
 }
 
-/* GMs always; players only if allowed and only for owned actors. */
+// Actors are addressed by id in the world and by UUID in a compendium. Compendium actors
+// the tool has seen (dropped on it, or opened from their sheet) are kept here.
+const packActors = new Map();
+const keyOf = (a) => (a?.pack ? a.uuid : a?.id ?? "");
+const getActor = (key) => (key ? game.actors.get(key) ?? packActors.get(key) ?? null : null);
+const rememberPackActor = (a) => { if (a?.pack) packActors.set(a.uuid, a); return a; };
+const packAllowed = () => game.user.isGM && game.settings.get(ID, "compendiumActors");
+const PACK_OFF = `${TITLE}: compendium actors are turned off. A GM can turn them on in the module settings.`;
+
+/* GMs always; players only if allowed and only for owned actors. Compendium actors: GMs, when turned on. */
 function canUse(actor) {
+  if (actor?.pack) return packAllowed();
   if (game.user.isGM) return true;
   if (!game.settings.get(ID, "allowPlayers")) return false;
   return actor ? actor.isOwner : true;
 }
 let app = null;
 function openApp(actor) {
+  if (actor?.pack && !packAllowed()) return ui.notifications.warn(PACK_OFF);
+  rememberPackActor(actor);
   if (!canUse(actor)) return ui.notifications.warn(`${TITLE}: the GM hasn't allowed players to conjure tokens.`);
   if (!game.user.isGM && !game.user.can("FILES_UPLOAD")) return ui.notifications.warn(`${TITLE}: you need the "Upload New Files" permission. Ask your GM to turn it on for players.`);
   if (!app) app = new FeatherFrameApp();

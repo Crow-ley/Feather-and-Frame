@@ -429,8 +429,10 @@ header p { flex: 0 1 auto; }
       </div>
       <label class="check"><input type="checkbox" id="sendEdits"> Save Edits to the Actor</label>
       <p class="hint">Keeps this token's edits with the actor, so you can load them back later and keep working.</p>
-      <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
-      <p class="hint">Also changes copies of this actor already on scenes.</p>
+      <div class="send-sec" id="sendPlacedSec">
+        <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
+        <p class="hint">Also changes copies of this actor already on scenes.</p>
+      </div>
       <p class="hint info send-status" id="sendStatus"></p>
     </div>
     <div class="send-foot">
@@ -1597,7 +1599,7 @@ function attachHost(h, actorId) {
   pick.addEventListener("drop", async (e) => {
     e.preventDefault(); pick.classList.remove("over");
     const a = await host.fromDrop(e.dataTransfer.getData("text/plain"));
-    if (a) setActor(a.id); else toast("Drag an actor from the Actors sidebar.", true);
+    if (a) setActor(a.id); else toast("Drag an actor from the Actors sidebar or a compendium.", true);
   });
 }
 function closeSend() { $("sendDlg").hidden = true; }
@@ -1612,6 +1614,7 @@ $("sendActor").onclick = () => {
   sendPortraitFile = null;
   $("sendEdits").checked = prefs.saveEdits !== false;
   fillWild(id);
+  $("sendPlacedSec").hidden = !!host.isPack?.(id);   // compendium actors have no tokens on scenes
   const sz = host.actorSize?.(id) ?? null;
   $("sendSizeSec").hidden = !sz;
   if (sz) {
