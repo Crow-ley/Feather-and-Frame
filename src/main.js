@@ -701,10 +701,26 @@ function onSocket(msg) {
   if (!msg || msg.to !== game.user.id) return;
   if (msg.type === "result") {
     const w = waiting.get(msg.reqId);
-    // A GM clears the request mark before answering, so an answer while it is still set is forged.
-    if (!w || game.user.getFlag(ID, "request")?.id === msg.reqId) return;
-    waiting.delete(msg.reqId);
-    if (msg.ok) w.resolve(String(msg.message)); else w.reject(new Error(String(msg.message)));
+    if (!w) return;
+    // A GM clears the request mark before answering, so an answer is only trusted once the mark
+    // is gone. The cleared mark can reach this client a moment after the answer does, so an
+    // answer that arrives while the mark is still set is held for up to 10 seconds. If the mark
+    // never clears, no GM answered and the held answer is dropped as forged. A held answer also
+    // waits half a second after the mark clears, so an answer sent after the clear (the GM's
+    // real one) wins over one that was sitting here before it.
+    const settle = () => {
+      if (waiting.get(msg.reqId) !== w) return;
+      waiting.delete(msg.reqId);
+      if (msg.ok) w.resolve(String(msg.message)); else w.reject(new Error(String(msg.message)));
+    };
+    const until = Date.now() + 10000;
+    let held = false;
+    const check = () => {
+      if (game.user.getFlag(ID, "request")?.id !== msg.reqId) return held ? setTimeout(settle, 500) : settle();
+      held = true;
+      if (Date.now() < until) setTimeout(check, 100);
+    };
+    check();
     return;
   }
   if (msg.type !== "part" || !game.user.isGM) return;
@@ -726,7 +742,9 @@ function onSocket(msg) {
   arriving.delete(msg.reqId);
   // One approval dialog at a time; requests queue behind it.
   const text = a.parts.join("");
-  approvals = approvals.then(() => handleRequest(msg.reqId, a.from, text));
+  // The catch keeps one failed request from stopping every dialog queued after it.
+  approvals = approvals.then(() => handleRequest(msg.reqId, a.from, text))
+    .catch((e) => console.error(`${TITLE} | approval`, e));
 }
 let approvals = Promise.resolve();
 
