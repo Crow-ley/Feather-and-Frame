@@ -168,6 +168,8 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .send-body > .row, .send-body > .hint.info { margin-left: 24px; }
 .send-status { margin-left: 0 !important; }
 .send-status:empty { display: none; }
+.portrait-from { gap: 8px; font-size: .9rem; flex-wrap: nowrap; }
+.portrait-from select { width: auto; max-width: 200px; padding: 3px 6px; text-overflow: ellipsis; }
 .send-body .wild-list { margin-left: 24px; width: fit-content; max-width: calc(100% - 24px); padding-right: 14px; }
 
 .send-status.err { color: var(--blood); } .send-status.ok { color: var(--ok); }
@@ -418,6 +420,10 @@ header p { flex: 0 1 auto; }
     <div class="send-body">
       <label class="check"><input type="checkbox" id="sendPortrait"> Original Image as Portrait</label>
       <p class="hint">Saves the originally uploaded image as the character sheet portrait.</p>
+      <div class="row portrait-from" id="sendPortraitFromRow" hidden>
+        <label for="sendPortraitFrom">Portrait from</label>
+        <select id="sendPortraitFrom" title="Which token's original image becomes the portrait"></select>
+      </div>
       <div class="row" id="sendPortraitRow">
         <button class="btn" id="sendPickPortrait">Alternative Portrait</button>
         <input type="file" id="sendPortraitFile" accept="image/*" hidden>
@@ -1657,13 +1663,26 @@ function syncWild() {
   const on = $("sendWild").checked;
   $("sendWildList").hidden = !on; $("sendWildAddRow").hidden = !on || !wildInfo;
   $("sendGo").textContent = on ? "Send Wildcard Set" : "Send to Actor";
+  syncPortraitFrom();
 }
+/* With a wildcard set and the original image as portrait, pick which ticked token gives the portrait. */
+function syncPortraitFrom() {
+  const show = $("sendWild").checked && $("sendPortrait").checked && !sendPortraitFile;
+  $("sendPortraitFromRow").hidden = !show;
+  if (!show) return;
+  const sel = $("sendPortraitFrom"), keep = sel.value;
+  const ids = [...$("sendWildList").querySelectorAll("input:checked")].map((cb) => cb.value);
+  sel.replaceChildren(...ids.map((id) => { const it = items.find((i) => i.id === id); const o = new Option(it?.outName ?? id, id); o.title = o.text; return o; }));
+  sel.value = ids.includes(keep) ? keep : ids.includes(cur?.id) ? cur.id : ids[0] ?? "";
+}
+$("sendWildList").addEventListener("change", syncPortraitFrom);
 $("sendWild").onchange = syncWild;
 $("sendSize").onchange = (e) => host?.savePref("matchSize", e.target.checked);
 $("sendEdits").onchange = (e) => host?.savePref("saveEdits", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
   $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
+  syncPortraitFrom();
 }
 $("sendPortrait").onchange = (e) => { host?.savePref("usePortrait", e.target.checked); syncSendPortrait(); };
 $("sendPlaced").onchange = (e) => host?.savePref("updatePlaced", e.target.checked);
@@ -1691,7 +1710,8 @@ $("sendGo").onclick = async () => {
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
       portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
-      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked, saveEdits: $("sendEdits").checked },
+      matchSize: !$("sendSizeSec").hidden && $("sendSize").checked, saveEdits: $("sendEdits").checked,
+      portraitFrom: $("sendPortraitFromRow").hidden ? null : $("sendPortraitFrom").value || null },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
     closeSend(); toast(msg); syncLoadEdits();
     if (mapPrev) setMapPrev(true, true);

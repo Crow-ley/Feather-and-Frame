@@ -431,7 +431,7 @@ class FeatherFrameApp extends ApplicationV2 {
     this.#prev = null;
   }
 
-  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false, saveEdits = false }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, matchSize = false, saveEdits = false, portraitFrom = null }, progress = () => {}) {
     const actor = getActor(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
     if (actor.pack && !packAllowed()) throw new Error(PACK_OFF);
@@ -494,11 +494,13 @@ class FeatherFrameApp extends ApplicationV2 {
     if (size) { update["prototypeToken.width"] = size.w; update["prototypeToken.height"] = size.h; }
 
     let portraitPath = null;
-    const f = portraitFile ?? (usePortrait ? (it.origFile ?? it.file) : null);
+    // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
+    const from = (wildPath && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
+    const f = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
     if (f) {
       progress("Uploading the portrait...");
       const ext = (f.name.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase();
-      portraitPath = await upload(new File([f], `${safeName(it.outName)}${ext}`, { type: f.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+      portraitPath = await upload(new File([f], `${safeName(from.outName)}${ext}`, { type: f.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
       update.img = portraitPath;
       // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
       if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
