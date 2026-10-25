@@ -29,7 +29,7 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 - Drag tokens from the list next to the one you're editing to compare them.
 - Ctrl+Z undoes brush strokes, moves and scaling.
 - Checks GitHub for new versions. When one is out, the GM sees a notice with the manifest URL the first time they open the window that session. You can turn this off in the module settings.
-- A GM setting lets players make tokens for characters they own. They also need the Upload New Files permission.
+- A GM setting lets players make tokens for characters they own. Players without Foundry's upload permission can still use it: their token goes to a GM, who sees a preview and approves it before anything is uploaded.
 
 ## Usage
 

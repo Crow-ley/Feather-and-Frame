@@ -7,7 +7,7 @@ const TITLE = "Feather & Frame";
 // Settings
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
-  reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players also need the Upload New Files permission (Game Settings, User Management or Configure Permissions).", type: Boolean, default: false });
+  reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
   reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/conjured" });
   reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/conjured/portraits" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
@@ -26,7 +26,9 @@ Hooks.once("init", () => {
 const FP = () => foundry.applications?.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
 const fileSource = () => (globalThis.ForgeVTT?.usingTheForge ? "forgevtt" : "data");
 const cleanFolder = (f) => String(f || "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
-const safeName = (n) => String(n || "token").replace(/[^\w\-. ()']+/g, "_").replace(/^_+|_+$/g, "") || "token";
+// File names keep letters, digits and a few marks; ".." and leading dots can't survive, so a name
+// can never climb out of its folder.
+const safeName = (n) => String(n || "token").replace(/[^\w\-. ()']+/g, "_").replace(/\.{2,}/g, ".").replace(/^[._ ]+|[._ ]+$/g, "") || "token";
 
 async function ensureFolder(source, folder) {
   const fp = FP();
@@ -313,6 +315,7 @@ class FeatherFrameApp extends ApplicationV2 {
       savedEdits: (id) => savedEdits(getActor(id)).length,
       loadEdits: (id) => loadEdits(getActor(id)),
       wildcard: (id) => wildcardSet(getActor(id)),
+      needsGM: (wild) => needsApproval(!!wild),
       savePref: (key, value) => game.settings.set(ID, key, value),
       selected: (id) => { this.actor = getActor(id); },
       send: (opts, progress) => this.send(opts, progress),
@@ -324,12 +327,7 @@ class FeatherFrameApp extends ApplicationV2 {
   }
 
   /* Scale and ring settings a token gets for a template. */
-  #tokenConfig(tpl, baked) {
-    const big = tpl === "big";
-    const scale = baked ? (big ? 2 : 1) : (Number(game.settings.get(ID, big ? "bigScale" : "stdScale")) || 1);
-    const correction = Number(game.settings.get(ID, big ? "bigCorrection" : "stdCorrection")) || 1;
-    return { big, baked, scale, correction };
-  }
+  #tokenConfig(tpl, baked) { return tokenConfig(tpl, baked); }
 
   // Preview on Map. Changes are local to this client: token data is set with updateSource and the
   // mesh texture is swapped. Everything is restored on stop, close, send or scene change.
@@ -429,127 +427,290 @@ class FeatherFrameApp extends ApplicationV2 {
     this.#prev = null;
   }
 
+  /* Send to Actor. The token is rendered here; the uploads and actor changes happen in
+     applyPackage, either right away or, for a player without upload permission, on a GM's
+     computer after the GM approves. */
   async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, saveEdits = false, portraitFrom = null }, progress = () => {}) {
     const actor = getActor(actorId), tool = this.tool;
     if (!actor) throw new Error("Pick an actor first.");
     if (actor.pack && !packAllowed()) throw new Error(PACK_OFF);
     if (!canUse(actor)) throw new Error("You can't change this actor.");
     if (actor.pack && game.packs.get(actor.pack)?.locked) throw new Error(`The ${game.packs.get(actor.pack).title} compendium is locked. Unlock it, then send again.`);
-    const it = tool?.current();
-    if (!it) throw new Error("Load an image first.");
-    if (wildcard && !game.user.isGM && !game.user.can("FILES_BROWSE"))
-      throw new Error("Wildcard sets need the Use File Browser permission. Ask your GM to turn it on for players.");
+    if (!tool?.current()) throw new Error("Load an image first.");
     await this.previewStop();
 
-    const baked = !!tool.baked?.();
-    const { big, scale, correction } = this.#tokenConfig(it.tpl, baked);
-    const folder = game.settings.get(ID, "tokenFolder");
-    const encodeOne = async (item) => {
-      const blob = await tool.encode(item);
-      if (blob.type !== "image/webp") throw new Error("This browser can't write WebP files.");
-      return blob;
-    };
-
-    // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
-    let tokenPath, wildPath = null, setPaths = [], setInfo = null, sent = [it];
-    if (!wildcard) {
-      progress("Rendering token...");
-      const blob = await encodeOne(it);
-      tokenPath = await upload(new File([blob], `${safeName(it.outName)}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), folder);
-    } else {
-      sent = tool.items().filter((i) => wildcard.ids.includes(i.id));
-      if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Big Chungus tokens.");
-      const existing = wildcard.add ? wildcardSet(actor) : null;
-      if (!sent.length || (sent.length < 2 && !existing)) throw new Error("A new wildcard set needs at least two tokens.");
-      const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
-      const stamp = Date.now().toString(36);
-      for (const [n, item] of sent.entries()) {
-        progress(`Rendering token ${n + 1} of ${sent.length}...`);
-        const blob = await encodeOne(item);
-        setPaths.push(await upload(new File([blob], `${safeName(item.outName)}-${stamp}-${n + 1}.webp`, { type: "image/webp" }), setFolder));
-      }
-      // The wildcard goes in the folder the files actually landed in (on the Forge that is a full URL).
-      const landed = setPaths[0].replace(/\?.*$/, "").replace(/\/[^/]*$/, "");
-      wildPath = `${landed}/*.webp`;
-      setInfo = { folder: setFolder, wild: wildPath, count: (existing?.count ?? 0) + sent.length };
-      tokenPath = setPaths[0];
-    }
-
-    const update = baked
-      ? { "prototypeToken.ring.enabled": false, "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale }
-      : { "prototypeToken.ring.enabled": true, "prototypeToken.ring.subject.texture": wildPath ? null : tokenPath, "prototypeToken.ring.subject.scale": correction,
-          "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale };
-    // A single token turns wildcards off; a set turns them on. With no ring subject image,
-    // Foundry draws whichever image it picked inside the ring.
-    update["prototypeToken.randomImg"] = !!wildPath;
-    update[`flags.${ID}.wildcard`] = setInfo;
-    // src is the plain token image: a random set image, the portrait, or the token itself.
-    // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
-    const tokenUpdate = (src) => baked
-      ? { "ring.enabled": false, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }
-      : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
-    let placedSrc = () => tokenPath;
-
-
-    let portraitPath = null;
-    // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
-    const from = (wildPath && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
-    const f = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
-    if (f) {
-      progress("Uploading the portrait...");
-      const ext = (f.name.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase();
-      portraitPath = await upload(new File([f], `${safeName(from.outName)}${ext}`, { type: f.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
-      update.img = portraitPath;
-      // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
-      if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
-    }
-
-    // Saved edits: one JSON file per token in <token folder>/edits, listed on the actor.
-    if (saveEdits) {
-      const editFolder = `${cleanFolder(folder)}/edits`;
-      const saved = [];
-      for (const [n, item] of sent.entries()) {
-        progress(sent.length > 1 ? `Saving edits ${n + 1} of ${sent.length}...` : "Saving edits...");
-        const json = await tool.exportEdit(item.id);
-        const path = await upload(new File([json], `${safeName(item.outName)}-${item.id}.json`, { type: "application/json" }), editFolder);
-        saved.push({ id: item.id, name: item.outName, path: path.replace(/\?.*$/, "") });
-      }
-      // Adding to a wildcard set keeps the edits already saved for the set.
-      const keep = wildcard?.add ? savedEdits(actor).filter((e) => !saved.some((s) => s.id === e.id)) : [];
-      update[`flags.${ID}.edits`] = [...keep, ...saved];
-    }
-
-    progress(`Updating ${actor.name}...`);
-    await actor.update(update);
-
-    // Tokens on scenes belong to world actors, never to a compendium entry.
-    let placed = 0;
-    if (updatePlaced && !actor.pack) {
-      if (wildPath) {
-        // Placed tokens each get a random image from the whole set, older ones included.
-        const pool = setInfo.count > sent.length ? await listSet(setInfo.folder, setPaths) : setPaths;
-        placedSrc = () => pool[Math.floor(Math.random() * pool.length)];
-      }
-      for (const scene of game.scenes) {
-        const ups = scene.tokens.filter((t) => t.actorId === actor.id).map((t) => {
-          return { _id: t.id, ...tokenUpdate(placedSrc()) };
-        });
-        if (ups.length) { await scene.updateEmbeddedDocuments("Token", ups); placed += ups.length; }
-      }
-    }
-
-    for (const item of sent) tool.markSaved?.(item);
-    ui.notifications.info(`${TITLE}: ${wildPath ? "wildcard set" : "token"} sent to ${actor.name}.`);
-    const tpl = (big ? "Big Chungus" : "Standard") + (baked ? ", ring baked in" : "");
-    const parts = [tpl, `scale ${scale}`];
-    if (!baked) parts.push(`scale correction ${correction}`);
-    if (wildPath) parts.push(`${sent.length} token${sent.length > 1 ? "s" : ""} ${wildcard.add && setInfo.count > sent.length ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
-    if (saveEdits) parts.push("edits saved");
-    if (portraitPath) parts.push("portrait set");
-    if (placed) parts.push(`${placed} placed token${placed > 1 ? "s" : ""} updated`);
-    return `Sent to ${actor.name}: ${parts.join(", ")}.`;
+    const pkg = await buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress);
+    const message = needsApproval(!!pkg.wildcard) ? await requestApproval(pkg, progress) : await applyPackage(actor, pkg, progress);
+    for (const item of pkg.items) tool.markSaved?.(item);
+    return message;
   }
 }
+
+/* Scale settings a token gets for a template. */
+function tokenConfig(tpl, baked) {
+  const big = tpl === "big";
+  const scale = baked ? (big ? 2 : 1) : (Number(game.settings.get(ID, big ? "bigScale" : "stdScale")) || 1);
+  const correction = Number(game.settings.get(ID, big ? "bigCorrection" : "stdCorrection")) || 1;
+  return { big, baked, scale, correction };
+}
+
+/* Everything a send needs, rendered in the tool: the token images, the portrait and the edit files. */
+async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress) {
+  const it = tool.current();
+  const sent = wildcard ? tool.items().filter((i) => wildcard.ids.includes(i.id)) : [it];
+  if (wildcard) {
+    if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Big Chungus tokens.");
+    const existing = wildcard.add ? wildcardSet(actor) : null;
+    if (!sent.length || (sent.length < 2 && !existing)) throw new Error("A new wildcard set needs at least two tokens.");
+  }
+  const tokens = [];
+  for (const [n, item] of sent.entries()) {
+    progress(sent.length > 1 ? `Rendering token ${n + 1} of ${sent.length}...` : "Rendering token...");
+    const blob = await tool.encode(item);
+    if (blob.type !== "image/webp") throw new Error("This browser can't write WebP files.");
+    tokens.push({ id: item.id, name: item.outName, blob });
+  }
+  // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
+  const from = (wildcard && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
+  const pf = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
+  const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf } : null;
+  let edits = null;
+  if (saveEdits) {
+    progress("Saving edits...");
+    edits = [];
+    for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
+  }
+  return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
+    updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
+}
+
+/* Upload a package's files and update the actor and its placed tokens. */
+async function applyPackage(actor, pkg, progress = () => {}) {
+  const { baked, wildcard } = pkg;
+  const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
+  const folder = game.settings.get(ID, "tokenFolder");
+  const n = pkg.tokens.length;
+
+  // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
+  let tokenPath, wildPath = null, setPaths = [], setInfo = null;
+  if (!wildcard) {
+    progress("Uploading token...");
+    const t = pkg.tokens[0];
+    tokenPath = await upload(new File([t.blob], `${safeName(t.name)}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), folder);
+  } else {
+    const existing = wildcard.add ? wildcardSet(actor) : null;
+    const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
+    const stamp = Date.now().toString(36);
+    for (const [i, t] of pkg.tokens.entries()) {
+      progress(`Uploading token ${i + 1} of ${n}...`);
+      setPaths.push(await upload(new File([t.blob], `${safeName(t.name)}-${stamp}-${i + 1}.webp`, { type: "image/webp" }), setFolder));
+    }
+    // The wildcard goes in the folder the files actually landed in (on the Forge that is a full URL).
+    const landed = setPaths[0].replace(/\?.*$/, "").replace(/\/[^/]*$/, "");
+    wildPath = `${landed}/*.webp`;
+    setInfo = { folder: setFolder, wild: wildPath, count: (existing?.count ?? 0) + n };
+    tokenPath = setPaths[0];
+  }
+
+  const update = baked
+    ? { "prototypeToken.ring.enabled": false, "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale }
+    : { "prototypeToken.ring.enabled": true, "prototypeToken.ring.subject.texture": wildPath ? null : tokenPath, "prototypeToken.ring.subject.scale": correction,
+        "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale };
+  // A single token turns wildcards off; a set turns them on. With no ring subject image,
+  // Foundry draws whichever image it picked inside the ring.
+  update["prototypeToken.randomImg"] = !!wildPath;
+  update[`flags.${ID}.wildcard`] = setInfo;
+  // src is the plain token image: a random set image, the portrait, or the token itself.
+  // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
+  const tokenUpdate = (src) => baked
+    ? { "ring.enabled": false, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }
+    : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
+  let placedSrc = () => tokenPath;
+
+  let portraitPath = null;
+  if (pkg.portrait) {
+    progress("Uploading the portrait...");
+    const p = pkg.portrait;
+    portraitPath = await upload(new File([p.blob], `${safeName(p.name)}${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+    update.img = portraitPath;
+    // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
+    if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
+  }
+
+  // Saved edits: one JSON file per token in <token folder>/edits, listed on the actor.
+  if (pkg.edits) {
+    const editFolder = `${cleanFolder(folder)}/edits`;
+    const saved = [];
+    for (const e of pkg.edits) {
+      const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
+      const path = await upload(new File([e.json], `${safeName(e.name)}-${id}.json`, { type: "application/json" }), editFolder);
+      saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
+    }
+    // Adding to a wildcard set keeps the edits already saved for the set.
+    const keep = wildcard?.add ? savedEdits(actor).filter((e) => !saved.some((s) => s.id === e.id)) : [];
+    update[`flags.${ID}.edits`] = [...keep, ...saved];
+  }
+
+  progress(`Updating ${actor.name}...`);
+  await actor.update(update);
+
+  // Tokens on scenes belong to world actors, never to a compendium entry.
+  let placed = 0;
+  if (pkg.updatePlaced && !actor.pack) {
+    if (wildPath) {
+      // Placed tokens each get a random image from the whole set, older ones included.
+      const pool = setInfo.count > n ? await listSet(setInfo.folder, setPaths) : setPaths;
+      placedSrc = () => pool[Math.floor(Math.random() * pool.length)];
+    }
+    for (const scene of game.scenes) {
+      const ups = scene.tokens.filter((t) => t.actorId === actor.id).map((t) => ({ _id: t.id, ...tokenUpdate(placedSrc()) }));
+      if (ups.length) { await scene.updateEmbeddedDocuments("Token", ups); placed += ups.length; }
+    }
+  }
+
+  ui.notifications.info(`${TITLE}: ${wildPath ? "wildcard set" : "token"} sent to ${actor.name}.`);
+  const parts = [(big ? "Big Chungus" : "Standard") + (baked ? ", ring baked in" : ""), `scale ${scale}`];
+  if (!baked) parts.push(`scale correction ${correction}`);
+  if (wildPath) parts.push(`${n} token${n > 1 ? "s" : ""} ${wildcard.add && setInfo.count > n ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
+  if (pkg.edits) parts.push("edits saved");
+  if (portraitPath) parts.push("portrait set");
+  if (placed) parts.push(`${placed} placed token${placed > 1 ? "s" : ""} updated`);
+  return `Sent to ${actor.name}: ${parts.join(", ")}.`;
+}
+
+// GM approval
+// A player without Upload New Files (or Use File Browser, for a wildcard set) can't upload, so the
+// rendered files go to the active GM over the module's socket in small pieces. The GM sees what
+// will change and approves or declines; on approval the GM's Foundry runs applyPackage. The GM
+// side checks everything itself and only ever writes into its own configured folders.
+const SOCKET = `module.${ID}`;
+const PART = 200000;                    // characters per socket message
+const MAX_TOKENS = 50, MAX_BYTES = 40e6;
+const waiting = new Map();              // player: request id -> { resolve, reject }
+const arriving = new Map();             // GM: request id -> { from, n, parts }
+
+function needsApproval(wildcard) {
+  if (game.user.isGM) return false;
+  return !game.user.can("FILES_UPLOAD") || (wildcard && !game.user.can("FILES_BROWSE"));
+}
+
+const blobToData = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+const dataToBlob = async (d) => (await fetch(d)).blob();
+
+async function requestApproval(pkg, progress) {
+  const gm = game.users.activeGM;
+  if (!gm) throw new Error("No GM is online to approve this. Try again when your GM is connected.");
+  progress("Packing the token for your GM...");
+  const body = {
+    actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
+    tokens: await Promise.all(pkg.tokens.map(async (t) => ({ id: t.id, name: t.name, data: await blobToData(t.blob) }))),
+    portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, data: await blobToData(pkg.portrait.blob) } : null,
+    edits: pkg.edits,
+  };
+  const text = JSON.stringify(body);
+  if (text.length > MAX_BYTES * 1.4) throw new Error("These images are too large to send to the GM. Try fewer tokens or a smaller portrait.");
+  const reqId = foundry.utils.randomID(), n = Math.ceil(text.length / PART);
+  const answer = new Promise((resolve, reject) => {
+    waiting.set(reqId, { resolve, reject });
+    setTimeout(() => { if (waiting.delete(reqId)) reject(new Error("Your GM didn't answer within 15 minutes.")); }, 15 * 60 * 1000);
+  });
+  for (let i = 0; i < n; i++) {
+    progress(`Sending to ${gm.name}... ${Math.round(((i + 1) / n) * 100)}%`);
+    game.socket.emit(SOCKET, { type: "part", reqId, to: gm.id, from: game.user.id, i, n, part: text.slice(i * PART, (i + 1) * PART) });
+  }
+  progress(`Waiting for ${gm.name} to approve...`);
+  return answer;
+}
+
+function onSocket(msg) {
+  if (!msg || msg.to !== game.user.id) return;
+  if (msg.type === "result") {
+    const w = waiting.get(msg.reqId);
+    if (!w) return;
+    waiting.delete(msg.reqId);
+    if (msg.ok) w.resolve(String(msg.message)); else w.reject(new Error(String(msg.message)));
+    return;
+  }
+  if (msg.type !== "part" || !game.user.isGM) return;
+  let a = arriving.get(msg.reqId);
+  if (!a) {
+    if (!Number.isInteger(msg.n) || msg.n < 1 || msg.n * PART > MAX_BYTES * 1.5) return;
+    arriving.set(msg.reqId, (a = { from: msg.from, n: msg.n, parts: new Array(msg.n), got: 0 }));
+    setTimeout(() => arriving.delete(msg.reqId), 10 * 60 * 1000);
+  }
+  if (a.from !== msg.from || !Number.isInteger(msg.i) || msg.i < 0 || msg.i >= a.n || a.parts[msg.i] != null || typeof msg.part !== "string") return;
+  a.parts[msg.i] = msg.part;
+  if (++a.got < a.n) return;
+  arriving.delete(msg.reqId);
+  handleRequest(msg.reqId, a.from, a.parts.join(""));
+}
+
+async function handleRequest(reqId, userId, text) {
+  const reply = (ok, message) => game.socket.emit(SOCKET, { type: "result", reqId, to: userId, from: game.user.id, ok, message });
+  try {
+    const user = game.users.get(userId);
+    if (!user) throw new Error("Unknown user.");
+    if (!game.settings.get(ID, "allowPlayers")) throw new Error("The GM hasn't allowed players to make tokens.");
+    let body;
+    try { body = JSON.parse(text); } catch (e) { throw new Error("The request arrived damaged. Try again."); }
+    const actor = game.actors.get(body?.actorId);
+    if (!actor) throw new Error("That actor isn't in this world.");
+    if (!actor.testUserPermission(user, "OWNER")) throw new Error(`${user.name} doesn't own ${actor.name}.`);
+    // Only expected kinds of data get through.
+    const tokens = Array.isArray(body.tokens) ? body.tokens : [];
+    if (!tokens.length || tokens.length > MAX_TOKENS) throw new Error("The request has no tokens.");
+    if (tokens.some((t) => typeof t.data !== "string" || !t.data.startsWith("data:image/webp;base64,"))) throw new Error("A token image isn't a WebP image.");
+    const portrait = body.portrait;
+    if (portrait && (typeof portrait.data !== "string" || !/^data:image\/(png|jpeg|webp|gif|avif);base64,/.test(portrait.data))) throw new Error("The portrait isn't an image.");
+    const ext = portrait ? ((/^\.(png|jpe?g|webp|gif|avif)$/i.exec(portrait.ext ?? "")?.[0] ?? ".webp").toLowerCase()) : null;
+    const edits = Array.isArray(body.edits) ? body.edits.filter((e) => {
+      try { return JSON.parse(e.json)?.format === "feather-and-frame-edit"; } catch (err) { return false; }
+    }) : null;
+    const tpl = body.tpl === "big" ? "big" : "standard";
+    const wildcard = body.wildcard ? { add: !!body.wildcard.add } : null;
+
+    // Ask the GM.
+    const esc = escapeHtml;
+    const pics = tokens.slice(0, 12).map((t) => `<img src="${esc(t.data)}" alt="" style="width:72px;height:72px;object-fit:contain;border:1px solid #444;border-radius:6px;background:#111">`).join("");
+    const changes = [
+      wildcard ? `${tokens.length} tokens as a wildcard set${wildcard.add ? " (added to the existing set)" : ""}` : "a new token",
+      portrait ? "a new portrait" : null,
+      edits?.length ? "saved edits" : null,
+      body.updatePlaced ? "tokens already on scenes" : null,
+    ].filter(Boolean);
+    const content = `
+      <p><strong>${esc(user.name)}</strong> wants to send ${esc(changes[0])} to <strong>${esc(actor.name)}</strong>.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${pics}</div>
+      ${portrait ? `<p>Portrait:</p><img src="${esc(portrait.data)}" alt="" style="max-width:120px;max-height:120px;border-radius:6px">` : ""}
+      ${changes.length > 1 ? `<p>Also changes: ${esc(changes.slice(1).join(", "))}.</p>` : ""}
+      <p>Approving uploads these files to your token folders and updates the actor.</p>`;
+    const choice = await foundry.applications.api.DialogV2.wait({
+      window: { title: `${TITLE}: approve token?`, icon: "fa-solid fa-crow" },
+      content,
+      buttons: [
+        { action: "approve", label: "Approve", icon: "fa-solid fa-check", default: true },
+        { action: "decline", label: "Decline", icon: "fa-solid fa-xmark" },
+      ],
+      rejectClose: false,
+    }).catch(() => null);
+    if (choice !== "approve") return reply(false, `${game.user.name} declined the token.`);
+
+    const pkg = {
+      actorId: actor.id, tpl, baked: !!body.baked, wildcard, updatePlaced: !!body.updatePlaced,
+      tokens: await Promise.all(tokens.map(async (t) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: await dataToBlob(t.data) }))),
+      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: await dataToBlob(portrait.data) } : null,
+      edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,
+    };
+    const size = pkg.tokens.reduce((s, t) => s + t.blob.size, 0) + (pkg.portrait?.blob.size ?? 0);
+    if (size > MAX_BYTES) throw new Error("The files are too large.");
+    const message = await applyPackage(actor, pkg);
+    reply(true, `${message} Approved by ${game.user.name}.`);
+  } catch (e) {
+    console.error(`${TITLE} | approval`, e);
+    reply(false, e?.message ?? String(e));
+  }
+}
+Hooks.once("ready", () => game.socket?.on(SOCKET, onSocket));
 
 /* The wildcard set this module made for an actor, if it is still in use. */
 function wildcardSet(actor) {
@@ -607,7 +768,6 @@ function openApp(actor) {
   if (actor?.pack && !packAllowed()) return ui.notifications.warn(PACK_OFF);
   rememberPackActor(actor);
   if (!canUse(actor)) return ui.notifications.warn(`${TITLE}: the GM hasn't allowed players to conjure tokens.`);
-  if (!game.user.isGM && !game.user.can("FILES_UPLOAD")) return ui.notifications.warn(`${TITLE}: you need the "Upload New Files" permission. Ask your GM to turn it on for players.`);
   if (!app) app = new FeatherFrameApp();
   if (actor) app.actor = actor;
   Promise.resolve(app.render({ force: true })).then(() => { if (actor) app.setActor(actor); });

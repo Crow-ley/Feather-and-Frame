@@ -1626,6 +1626,7 @@ $("sendActor").onclick = () => {
   fillWild(id);
   $("sendPlacedSec").hidden = !!host.isPack?.(id);   // compendium actors have no tokens on scenes
   $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
+  syncApprovalNote();
   syncSendPortrait(); $("sendDlg").hidden = false; $("sendGo").focus();
 };
 /* Wildcard set: every token in the list with the same template as the one being edited can join. */
@@ -1653,7 +1654,13 @@ function syncWild() {
   const on = $("sendWild").checked;
   $("sendWildList").hidden = !on; $("sendWildAddRow").hidden = !on || !wildInfo;
   $("sendGo").textContent = on ? "Send Wildcard Set" : "Send to Actor";
-  syncPortraitFrom();
+  syncPortraitFrom(); syncApprovalNote();
+}
+/* Players without upload permission send to the GM for approval; say so before they send. */
+function syncApprovalNote() {
+  const st = $("sendStatus");
+  if (st.classList.contains("err") || $("sendGo").disabled) return;
+  st.textContent = host?.needsGM?.($("sendWild").checked) ? "Your GM will be asked to approve this before it's uploaded." : "";
 }
 /* With a wildcard set and the original image as portrait, pick which ticked token gives the portrait. */
 function syncPortraitFrom() {
