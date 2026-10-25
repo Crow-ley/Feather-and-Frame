@@ -689,23 +689,35 @@ function onSocket(msg) {
   if (msg.type !== "part" || !game.user.isGM) return;
   let a = arriving.get(msg.reqId);
   if (!a) {
+    // Nothing is kept for a request its sender hasn't marked, so each player has at most one
+    // request arriving at a time and nobody can fill the GM's memory with made-up ones.
+    const user = game.users.get(msg.from);
+    if (!user || user.isGM || user.getFlag(ID, "request")?.id !== msg.reqId) return;
     if (!Number.isInteger(msg.n) || msg.n < 1 || msg.n * PART > MAX_BYTES * 1.5) return;
+    if (!game.settings.get(ID, "allowPlayers")) return answer(msg.reqId, msg.from, false, "The GM hasn't allowed players to make tokens.");
+    for (const [id, other] of arriving) if (other.from === msg.from) arriving.delete(id);
     arriving.set(msg.reqId, (a = { from: msg.from, n: msg.n, parts: new Array(msg.n), got: 0 }));
-    setTimeout(() => arriving.delete(msg.reqId), 10 * 60 * 1000);
+    setTimeout(() => { if (arriving.get(msg.reqId) === a) arriving.delete(msg.reqId); }, 10 * 60 * 1000);
   }
   if (a.from !== msg.from || !Number.isInteger(msg.i) || msg.i < 0 || msg.i >= a.n || a.parts[msg.i] != null || typeof msg.part !== "string") return;
   a.parts[msg.i] = msg.part;
   if (++a.got < a.n) return;
   arriving.delete(msg.reqId);
-  handleRequest(msg.reqId, a.from, a.parts.join(""));
+  // One approval dialog at a time; requests queue behind it.
+  const text = a.parts.join("");
+  approvals = approvals.then(() => handleRequest(msg.reqId, a.from, text));
+}
+let approvals = Promise.resolve();
+
+/* Answer a player's request. The sender's mark is cleared first (see GM approval above). */
+async function answer(reqId, userId, ok, message) {
+  const user = game.users.get(userId);
+  if (user?.getFlag(ID, "request")?.id === reqId) await user.unsetFlag(ID, "request").catch((e) => console.warn(`${TITLE} | approval`, e));
+  game.socket.emit(SOCKET, { type: "result", reqId, to: userId, from: game.user.id, ok, message });
 }
 
 async function handleRequest(reqId, userId, text) {
-  const reply = async (ok, message) => {
-    const user = game.users.get(userId);
-    if (user?.getFlag(ID, "request")?.id === reqId) await user.unsetFlag(ID, "request").catch((e) => console.warn(`${TITLE} | approval`, e));
-    game.socket.emit(SOCKET, { type: "result", reqId, to: userId, from: game.user.id, ok, message });
-  };
+  const reply = (ok, message) => answer(reqId, userId, ok, message);
   try {
     const user = game.users.get(userId);
     if (!user) throw new Error("Unknown user.");
