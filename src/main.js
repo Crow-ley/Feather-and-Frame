@@ -59,9 +59,9 @@ async function upload(file, folder) {
 // draws it at 1024 px, coloured the way Foundry's ring shader would colour it.
 const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.getRoute(p));
 
-/* The spritesheet for an actor's ring. Multiple Rings lets each token pick a ring and replaces
-   Foundry's active ring with a combined sheet it builds in memory, so the real choice is read
-   from its token flag, then from the world's Dynamic Token Ring setting. */
+/* The spritesheet for an actor's ring: the ring picked in Foundry's "Dynamic Token Rings" setting.
+   Multiple Rings, when it is active, lets each token pick its own ring and replaces Foundry's
+   active ring with a combined sheet it builds in memory, so its token flag is checked first. */
 function ringSheetPath(actor) {
   const rc = CONFIG.Token.ring;
   let id = null;
@@ -86,12 +86,7 @@ function loadRingSheet(path) {
     img.crossOrigin = "anonymous";
     img.src = routeOf(path.replace(/[^/]*$/, "") + json.meta.image);
     await img.decode();
-    // Foundry skips "-bkg" and "-msk" frames when it lists rings; the largest ring frame is the sharpest.
-    const rings = Object.entries(json.frames).filter(([n]) => !n.includes("-bkg") && !n.includes("-msk"))
-      .sort((a, b) => b[1].sourceSize.w - a[1].sourceSize.w);
-    if (!rings.length) return null;
-    const [name, ring] = rings[0];
-    return { img, ring, bkg: json.frames[`${name}-bkg`] ?? null, msk: json.frames[`${name}-msk`] ?? null, config: json.config ?? {} };
+    return { img, frames: json.frames, config: json.config ?? {} };
   })();
   ringSheets.set(path, load);
   load.catch(() => ringSheets.delete(path));
@@ -141,8 +136,16 @@ function ringColour(own, frameColour, sheetColour) {
 async function ringImage(actor) {
   const sheet = await loadRingSheet(ringSheetPath(actor));
   if (!sheet) return null;
+  // Like Foundry, use the ring frame made for this token's grid size (a sheet can draw small and
+  // large rings differently). "-bkg" and "-msk" frames are not rings. Ties go to the larger frame.
+  const tok = actor?.prototypeToken, grid = Math.min(Number(tok?.width) || 1, Number(tok?.height) || 1);
+  const rings = Object.entries(sheet.frames).filter(([n]) => !n.includes("-bkg") && !n.includes("-msk"))
+    .sort((a, b) => Math.abs((a[1].gridTarget ?? 1) - grid) - Math.abs((b[1].gridTarget ?? 1) - grid) || b[1].sourceSize.w - a[1].sourceSize.w);
+  if (!rings.length) return null;
+  const [name, ring] = rings[0];
+  const bkg = sheet.frames[`${name}-bkg`] ?? null, msk = sheet.frames[`${name}-msk`] ?? null;
   const size = 1024, half = size / 2;
-  const { img, ring, bkg, msk, config } = sheet;
+  const { img, config } = sheet;
   const colours = actor?.prototypeToken?.ring?.colors ?? {};
   const rc = ringColour(colours.ring, ring.ringColor, config.defaultRingColor);
   const bc = ringColour(colours.background, ring.backgroundColor, config.defaultBackgroundColor);
@@ -191,7 +194,8 @@ async function ringImage(actor) {
 let toolPage = null;
 async function loadToolPage() {
   if (toolPage) return toolPage;
-  const folder = new URL(foundry.utils.getRoute(`modules/${ID}/`), window.location.href).href;
+  // getRoute drops trailing slashes, so the slash is added after it.
+  const folder = new URL(`${foundry.utils.getRoute(`modules/${ID}`)}/`, window.location.href).href;
   const version = game.modules.get(ID)?.version ?? "";
   const res = await fetch(`${folder}tool.html?v=${encodeURIComponent(version)}`, { cache: "no-cache" });
   if (!res.ok) throw new Error(`tool.html: ${res.status}`);
@@ -244,7 +248,7 @@ class FeatherFrameApp extends ApplicationV2 {
     try { wrap.querySelector("iframe").srcdoc = await loadToolPage(); }
     catch (e) {
       console.error(`${TITLE} | tool page`, e);
-      ui.notifications.error(`${TITLE}: couldn't load the tool page. Try reinstalling the module.`);
+      ui.notifications.error(`${TITLE}: couldn't load the tool page (${e?.message ?? e}). Try reinstalling the module.`);
     }
     return wrap;
   }
