@@ -36,12 +36,9 @@ Standard tokens get a token scale of 1 and a ring scale correction of 1. Big Chu
 
 ## Outside connections
 
-The module makes two kinds of requests outside your Foundry server:
+The only request the module makes outside your Foundry server is the update check: one request per session to api.github.com, only for the GM. Turn it off with the "Check GitHub for updates" setting and the module stays entirely on your server. Your images are uploaded only to your own Foundry data folder.
 
-- The update check sends one request per session to api.github.com, only for the GM. Turn it off with the "Check GitHub for updates" setting.
-- The tool window loads its two fonts from Google Fonts. If it can't reach them, it falls back to your system fonts.
-
-Nothing else leaves your server. Your images are uploaded only to your own Foundry data folder.
+The fonts, icons and images ship with the module. The two fonts, IM Fell English SC and Alegreya Sans, are under the SIL Open Font License; the license files are in `assets/fonts`.
 
 ## Help
 

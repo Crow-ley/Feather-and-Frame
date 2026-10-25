@@ -17,7 +17,13 @@ const v = manifest.version;
 const id = manifest.id;
 
 // 1. The tool page. src/tool.html refers to its images as assets/<name>.
-const ASSETS = { "assets/favicon.png": "image/png", "assets/discord-server.webp": "image/webp", "assets/discord-user.webp": "image/webp" };
+const ASSETS = {
+  "assets/favicon.png": "image/png", "assets/discord-server.webp": "image/webp", "assets/discord-user.webp": "image/webp",
+  "assets/fonts/im-fell-english-sc.woff": "font/woff", "assets/fonts/alegreya-sans-400.woff": "font/woff",
+  "assets/fonts/alegreya-sans-500.woff": "font/woff", "assets/fonts/alegreya-sans-700.woff": "font/woff",
+};
+// Shipped with the module but not used by the page: the font licenses.
+const EXTRA = ["assets/fonts/OFL-im-fell-english-sc.txt", "assets/fonts/OFL-alegreya-sans.txt"];
 const source = read("src/tool.html").toString();
 for (const a of Object.keys(ASSETS)) if (!source.includes(`"${a}"`)) throw new Error(`src/tool.html doesn't use ${a}`);
 const wrap = (body) => `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
@@ -29,18 +35,19 @@ for (const [a, type] of Object.entries(ASSETS)) standalone = standalone.split(`"
 //    a cached older copy. tool.html and the images are shipped as they are, readable.
 const out = join(root, "dist", id);
 rmSync(join(root, "dist"), { recursive: true, force: true });
-for (const d of ["scripts", "styles", "assets"]) mkdirSync(join(out, d), { recursive: true });
+for (const d of ["scripts", "styles", "assets/fonts"]) mkdirSync(join(out, d), { recursive: true });
 
 writeFileSync(join(out, "scripts", `main-${v}.js`), read("src/main.js"));
 writeFileSync(join(out, "styles", `ccs-${v}.css`), read("src/ccs.css"));
 writeFileSync(join(out, "tool.html"), wrap(source));
-for (const a of Object.keys(ASSETS)) writeFileSync(join(out, a), read(a));
+for (const a of [...Object.keys(ASSETS), ...EXTRA]) writeFileSync(join(out, a), read(a));
 
 const built = { ...manifest, esmodules: [`scripts/main-${v}.js`], styles: [`styles/ccs-${v}.css`] };
 const manifestText = JSON.stringify(built, null, 2) + "\n";
 writeFileSync(join(out, "module.json"), manifestText);
 writeFileSync(join(root, "dist", "module.json"), manifestText);
-writeFileSync(join(root, "dist", `${id}.html`), standalone);
+// The charset line keeps symbols like ‹ › from showing as garbage when the file is opened straight from disk.
+writeFileSync(join(root, "dist", `${id}.html`), `<meta charset="utf-8">\n${standalone}`);
 
 // 3. The release zip, files at its root as Foundry expects. A small store-only zip writer
 //    (no compression) so the build needs nothing beyond Node itself.
