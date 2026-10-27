@@ -464,6 +464,14 @@ function tokenConfig(tpl, baked) {
   return { big, baked, scale, correction };
 }
 
+/* PF2e's "Autoscale" token option sets a token's scale back to 1 (0.8 for small creatures) every
+   time the token is drawn, which would undo a Big Chungus scale of 2. When the scale isn't 1 it
+   is turned off for that token, the same as unticking Autoscale in its Token Config. Other
+   systems get nothing extra. prefix is "prototypeToken." for the actor's prototype token. */
+function keepScale(scale, prefix = "") {
+  return game.system?.id === "pf2e" && scale !== 1 ? { [`${prefix}flags.pf2e.autoscale`]: false } : {};
+}
+
 /* Everything a send needs, rendered in the tool: the token images, the portrait and the edit files. */
 async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress) {
   const it = tool.current();
@@ -526,15 +534,17 @@ async function applyPackage(actor, pkg, progress = () => {}) {
     ? { "prototypeToken.ring.enabled": false, "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale }
     : { "prototypeToken.ring.enabled": true, "prototypeToken.ring.subject.texture": wildPath ? null : tokenPath, "prototypeToken.ring.subject.scale": correction,
         "prototypeToken.texture.src": wildPath ?? tokenPath, "prototypeToken.texture.scaleX": scale, "prototypeToken.texture.scaleY": scale };
+  Object.assign(update, keepScale(scale, "prototypeToken."));
   // A single token turns wildcards off; a set turns them on. With no ring subject image,
   // Foundry draws whichever image it picked inside the ring.
   update["prototypeToken.randomImg"] = !!wildPath;
   update[`flags.${ID}.wildcard`] = setInfo;
   // src is the plain token image: a random set image, the portrait, or the token itself.
   // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
-  const tokenUpdate = (src) => baked
+  const tokenUpdate = (src) => ({ ...(baked
     ? { "ring.enabled": false, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }
-    : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale };
+    : { "ring.enabled": true, "ring.subject.texture": wildPath ? null : tokenPath, "ring.subject.scale": correction, "texture.src": src, "texture.scaleX": scale, "texture.scaleY": scale }),
+    ...keepScale(scale) });
   let placedSrc = () => tokenPath;
 
   let portraitPath = null;
