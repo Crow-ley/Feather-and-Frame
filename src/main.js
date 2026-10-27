@@ -1023,6 +1023,13 @@ Hooks.on("getHeaderControlsApplicationV2", (sheet, controls) => {
   controls.push({ icon: "fa-solid fa-crow", label: "Conjure Token", action: "ccsConjure", onClick: () => openApp(doc) });
   try { sheet.options.actions ??= {}; sheet.options.actions.ccsConjure ??= () => openApp(doc); } catch (e) { /* ignore */ }
 });
+/* Sheets built on Foundry's older Application V1 (PF2e and Shadowdark use these) don't run the
+   hook above. They ask for their title-bar buttons through this one instead. */
+Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
+  const doc = sheet.actor ?? sheet.document;
+  if (!(doc instanceof Actor) || !doc.isOwner || !canUse(doc)) return;
+  buttons.unshift({ label: "Conjure Token", class: "ccs-conjure", icon: "fa-solid fa-crow", onclick: () => openApp(doc) });
+});
 
 /* Portrait button on dnd5e sheets (edit mode only). */
 function addPortraitBar(sheet, html) {
