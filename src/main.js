@@ -102,15 +102,11 @@ async function upload(file, folder) {
   const source = fileSource(), fp = FP();
   folder = cleanFolder(folder);
   await ensureFolder(source, folder);
-  // Forge's CDN can serve a stale copy of an overwritten file, so Forge uploads get unique names.
-  if (source === "forgevtt") {
-    const stamp = Date.now().toString(36);
-    file = new File([file], file.name.replace(/(\.[^.]+)?$/, (ext) => `-${stamp}${ext}`), { type: file.type });
-  }
   const res = await fp.upload(source, folder, file, {}, { notify: false });
   if (res === false || res?.status === "error") throw new Error(res?.message || "the upload was refused");
   let path = res?.path ?? `${folder}/${file.name}`;
-  // Version tag so cached textures aren't reused and repeat sends still count as a change.
+  // Version tag so cached textures aren't reused and repeat sends still count as a change. It also gets
+  // the new file past the Forge's CDN after an overwrite (tested on the Forge, 2026-10-28).
   return path.replace(/\?.*$/, "") + "?v=" + Date.now().toString(36);
 }
 
