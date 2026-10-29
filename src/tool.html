@@ -1134,8 +1134,8 @@ function drawNow() {
   if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
   const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
   const shown = ringOn ? shownRing() : null;
+  drawBack(vctx, T); // background first, so the ring sits over it
   if (ringOn) vctx.drawImage(shown.ring, ...ringRect(T));
-  drawBack(vctx, T);
   // Token layer
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
   toCam(cctx); cctx.imageSmoothingQuality = "high"; cctx.imageSmoothingEnabled = S * cur.s < 3;
@@ -1687,8 +1687,8 @@ function composeToken(it, size, withRing) {
     const x = out.getContext("2d"), k = size / 1024, [rx, ry, rw, rh] = ringRect(TPL[it.tpl]);
     x.imageSmoothingQuality = "high";
     const ringLayer = (img) => x.drawImage(img, rx * k, ry * k, rw * k, rh * k);
-    ringLayer(ring);
     x.setTransform(k, 0, 0, k, 0, 0); drawBack(x, TPL[it.tpl]); x.setTransform(1, 0, 0, 1, 0, 0);
+    ringLayer(ring);
     x.drawImage(c, 0, 0);
     x.setTransform(k, 0, 0, k, 0, 0);
     if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
