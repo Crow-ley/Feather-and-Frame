@@ -363,7 +363,7 @@ header p { flex: 0 1 auto; }
       <div class="group">
         <span class="label">Ring and Preview</span>
         <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
-        <p class="hint">Preview only. The ring is saved only with Bake Ring Into Image.</p>
+        <p class="hint">Preview only. A custom ring is always saved into the token; the default ring is added by Foundry.</p>
         <div class="row">
           <label class="btn" for="ringFile">Upload Ring...</label>
           <input id="ringFile" type="file" accept="image/*" hidden>
@@ -404,8 +404,7 @@ header p { flex: 0 1 auto; }
           <select id="quality" aria-label="WebP quality"><option value="0.9">Quality 90</option><option value="0.95">Quality 95</option><option value="1">Lossless</option><option value="0.8">Quality 80</option></select>
         </div>
         <p class="hint">Size comes from the template unless you pick one. Higher quality means sharper, larger files.</p>
-        <label class="check"><input type="checkbox" id="bakeRing"> Bake Ring Into Image</label>
-        <p class="hint">Saves the ring into the image, for VTTs without dynamic rings.</p>
+        <p class="hint info" id="bakeInfo" hidden>The custom ring is saved into the token image.</p>
         <button class="btn primary" id="saveOne" disabled>Save Token</button>
       </div>
     </aside>
@@ -506,18 +505,19 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100, backId: null };
+let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100, backId: null };
 let ringCustom = false, ringPix = null, ringFrame = null;
 let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
+delete prefs.bakeRing; // setting from before baking was automatic
 function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
-$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut; $("bakeRing").checked = prefs.bakeRing;
+$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut;
 $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; draw();
+    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; $("bakeInfo").hidden = !custom; draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -1342,7 +1342,6 @@ $("zoom").onchange = () => { zoomRec = false; persistSoon(); };
 $("showRing").onchange = (e) => { prefs.ring = e.target.checked; savePrefs(); draw(); };
 $("ringScale").oninput = (e) => { prefs.ringScale = +e.target.value; $("ringScaleVal").textContent = prefs.ringScale + "%"; savePrefs(); rememberRingSettings(); draw(); };
 $("ringFront").onchange = (e) => { prefs.ringFront = e.target.checked; savePrefs(); rememberRingSettings(); draw(); };
-$("bakeRing").onchange = (e) => { prefs.bakeRing = e.target.checked; savePrefs(); schedulePreview(); };
 $("ringCut").onchange = (e) => { prefs.ringCut = e.target.checked; savePrefs(); draw(); };
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -1486,7 +1485,7 @@ function makeZip(files) {
 }
 let downloads = null;
 
-function bakedRing() { return !!(prefs.bakeRing && ring.naturalWidth); }
+function bakedRing() { return !!(ringCustom && ring.naturalWidth); }
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
 function composeToken(it, size, withRing) {
   let c = renderToken(it, size);
