@@ -148,7 +148,12 @@ kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); 
 .actor-pick { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px; background: var(--panel); }
 .actor-pick.over { border-color: var(--brass); background: var(--raise); }
 .actor-pick img { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; flex: none; background: var(--bg); }
-.actor-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.actor-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; position: relative; }
+.actor-hits { position: absolute; top: 34px; left: 0; right: 0; z-index: 20; max-height: 260px; overflow-y: auto; background: var(--panel); border: 1px solid var(--brass); border-radius: 6px; box-shadow: 0 8px 20px rgba(0,0,0,.5); }
+.actor-hits div { display: flex; align-items: center; gap: 8px; padding: 4px 8px; cursor: pointer; font-size: .9rem; }
+.actor-hits div:hover, .actor-hits div.on { background: var(--raise); }
+.actor-hits div.on { color: var(--brass); }
+.actor-pick .actor-hits img { width: 24px; height: 24px; }
 .actor-pick select { height: 36px; font-size: .95rem; }
 .actor-pick input { height: 30px; font-size: .9rem; }
 .work.list-hidden .actor-pick, .work.list-hidden .load-edits { display: none !important; }
@@ -214,6 +219,7 @@ header p { flex: 0 1 auto; }
       <img id="actorImg" alt="">
       <div class="actor-fields">
         <input id="actorFind" type="text" placeholder="Search actors..." aria-label="Search actors" autocomplete="off" spellcheck="false">
+        <div class="actor-hits" id="actorHits" hidden></div>
         <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
       </div>
     </div>
@@ -1607,7 +1613,27 @@ function matchesSearch(o) {
   const q = $("actorFind").value.trim().toLowerCase();
   return !q || o.text.toLowerCase().includes(q);
 }
-$("actorFind").oninput = filterActors;
+$("actorFind").oninput = () => { filterActors(); showHits(); };
+$("actorFind").onfocus = showHits;
+$("actorFind").onblur = () => { $("actorHits").hidden = true; };
+
+/* The list under the search box. Shows while there's text, picked actor highlighted. */
+function showHits() {
+  const box = $("actorHits"), sel = $("actorSel");
+  const found = $("actorFind").value.trim() ? [...sel.options].filter((o) => o.value && matchesSearch(o)) : [];
+  box.replaceChildren(...found.map((o) => {
+    const row = document.createElement("div");
+    const img = document.createElement("img");
+    img.src = host?.actor(o.value)?.img ?? "";
+    row.append(img, o.text);
+    if (o.value === sel.value) row.className = "on";
+    // mousedown, not click, so the box doesn't lose focus and close first
+    row.onmousedown = (e) => { e.preventDefault(); setActor(o.value); box.hidden = true; };
+    return row;
+  }));
+  box.hidden = !found.length;
+  box.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+}
 
 /* Keys in the search box: Up and Down step through the matching actors and pick each one,
    Enter picks the first match (unless the picked actor already matches), Escape clears the
@@ -1623,13 +1649,16 @@ $("actorFind").onkeydown = (e) => {
     // From nothing picked (or a pick that doesn't match), Down starts at the top and Up at the bottom.
     const next = at < 0 ? (down ? 0 : found.length - 1) : (at + (down ? 1 : -1) + found.length) % found.length;
     setActor(found[next].value);
+    showHits();
   } else if (e.key === "Enter") {
     e.preventDefault();
     if (at < 0 && found.length) setActor(found[0].value);
+    $("actorHits").hidden = true;
   } else if (e.key === "Escape") {
     e.preventDefault();
     e.target.value = "";
     filterActors();
+    $("actorHits").hidden = true;
   }
 };
 
