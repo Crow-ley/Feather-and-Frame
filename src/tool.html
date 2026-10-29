@@ -383,9 +383,11 @@ header p { flex: 0 1 auto; }
           <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
           <input type="range" id="backScale" min="50" max="200" step="1" value="100">
         </div>
-        <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
-        <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
-        <p class="hint">Lines a custom ring up with the image circle.</p>
+        <div class="group" id="ringSizeRow" hidden style="gap:6px">
+          <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
+          <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
+          <p class="hint">Lines a custom ring up with the image circle.</p>
+        </div>
         <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
         <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
         <div class="group" id="tintRow" hidden style="gap:6px">
@@ -560,7 +562,7 @@ $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.ba
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
+    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
