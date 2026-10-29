@@ -8,8 +8,9 @@ const TITLE = "Feather & Frame";
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
-  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/conjured" });
-  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/conjured/portraits" });
+  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/actors" });
+  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/actors/portraits" });
+  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
@@ -20,6 +21,56 @@ Hooks.once("init", () => {
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
+  // Rings uploaded from the tool, each { id, label, spritesheet }.
+  game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
+  // An uploaded ring waiting to become the world's ring on the next load (see the ready hook below).
+  game.settings.register(ID, "applyRing", { scope: "world", config: false, type: String, default: "" });
+});
+
+/* Apply & Reload. A new ring can't be the world's ring until Foundry has registered it, which only
+   happens while loading. So the ring's id is kept in applyRing, the page reloads, and once loaded
+   the first GM sets Foundry's Dynamic Token Rings setting to it and reloads again to draw it. */
+Hooks.once("ready", async () => {
+  const id = game.user.isGM && game.settings.get(ID, "applyRing");
+  if (!id) return;
+  await game.settings.set(ID, "applyRing", "");
+  if (!CONFIG.Token.ring.configIDs.includes(id)) return ui.notifications.warn(`${TITLE}: the uploaded ring couldn't be found, so the world's ring wasn't changed.`);
+  await game.settings.set("core", "dynamicTokenRing", id);
+  foundry.utils.debouncedReload();
+});
+
+/* Ring shader for uploaded rings. It is Foundry's own shader with one line changed: inside the
+   image circle the ring is drawn over the token image, so a ring's inner overhang stays in front
+   of the character. Outside the circle the character stays on top, as in Foundry. The circle is
+   at 0.668 of the frame's half-width (342 of 512 px), where the tool puts every ring's inner edge.
+   If Foundry's shader no longer has the line, the rings use Foundry's shader and lose the overhang. */
+const RING_BLEND = "vec4 blendedResult = blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);";
+const OVERHANG_BLEND = `vec4 blendedResult = (dist < 0.668)
+      ? blend(ringColor * rectangularMask, blend(processedColor, backgroundColor * rectangularMask))
+      : blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);`;
+function overhangShader() {
+  const Base = foundry.canvas.rendering.shaders.TokenRingSamplerShader;
+  const frag = Base._batchFragmentShader;
+  if (typeof frag !== "string" || !frag.includes(RING_BLEND)) {
+    console.warn(`${TITLE} | Foundry's ring shader has changed, so uploaded rings are drawn without inner overhang.`);
+    return null;
+  }
+  return class FeatherFrameRingShader extends Base {
+    static classPluginName = "featherFrameRingBatch";
+    static _batchFragmentShader = frag.replace(RING_BLEND, OVERHANG_BLEND);
+  };
+}
+
+// Uploaded rings join Foundry's ring list. Foundry only takes new rings during this hook,
+// so a ring added later appears after a reload.
+Hooks.once("initializeDynamicTokenRingConfig", (ringConfig) => {
+  const RingData = foundry.canvas.placeables.tokens.DynamicRingData;
+  const shaderClass = overhangShader(), framework = shaderClass ? { framework: { shaderClass } } : {};
+  for (const r of game.settings.get(ID, "rings")) {
+    if (!r?.id) continue;
+    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet, ...framework })); }
+    catch (e) { console.warn(`${TITLE} | Couldn't add ring "${r.label}"`, e); }
+  }
 });
 
 // Helpers
@@ -51,16 +102,37 @@ async function upload(file, folder) {
   const source = fileSource(), fp = FP();
   folder = cleanFolder(folder);
   await ensureFolder(source, folder);
-  // Forge's CDN can serve a stale copy of an overwritten file, so Forge uploads get unique names.
-  if (source === "forgevtt") {
-    const stamp = Date.now().toString(36);
-    file = new File([file], file.name.replace(/(\.[^.]+)?$/, (ext) => `-${stamp}${ext}`), { type: file.type });
-  }
   const res = await fp.upload(source, folder, file, {}, { notify: false });
   if (res === false || res?.status === "error") throw new Error(res?.message || "the upload was refused");
   let path = res?.path ?? `${folder}/${file.name}`;
-  // Version tag so cached textures aren't reused and repeat sends still count as a change.
+  // Version tag so cached textures aren't reused and repeat sends still count as a change. It also gets
+  // the new file past the Forge's CDN after an overwrite (tested on the Forge, 2026-10-28).
   return path.replace(/\?.*$/, "") + "?v=" + Date.now().toString(36);
+}
+
+// Dynamic rings uploaded from the tool. The id comes from the name, so names that differ only in
+// capitals, spaces or marks share an id, and uploading under that name again replaces the ring.
+const ringId = (name) => "ff-" + (String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ring");
+async function uploadRing({ name, image, json }) {
+  if (!game.user.isGM) throw new Error("only a GM can upload dynamic rings");
+  const id = ringId(name), folder = game.settings.get(ID, "ringFolder");
+  const img = await upload(new File([image], `${id}.webp`, { type: "image/webp" }), folder);
+  // The sheet names its image relative to itself; the version tag makes a replaced image load fresh.
+  json.meta.image = img.split("/").pop();
+  const sheet = await upload(new File([JSON.stringify(json)], `${id}.json`, { type: "application/json" }), folder);
+  const rings = [...game.settings.get(ID, "rings")], entry = { id, label: name, spritesheet: sheet };
+  const i = rings.findIndex((r) => r?.id === id);
+  if (i < 0) rings.push(entry); else rings[i] = entry;
+  await game.settings.set(ID, "rings", rings);
+}
+// Takes an uploaded ring off Foundry's list. Its files stay, since Foundry gives modules no way to
+// delete files; uploading under the same name later just writes over them. If it was the world's
+// ring, the world goes back to Foundry's Steel ring so it never points at a ring that isn't there.
+async function removeRing(id) {
+  if (!game.user.isGM) throw new Error("only a GM can remove dynamic rings");
+  await game.settings.set(ID, "rings", game.settings.get(ID, "rings").filter((r) => r?.id !== id));
+  if (game.settings.get(ID, "applyRing") === id) await game.settings.set(ID, "applyRing", "");
+  if (game.settings.get("core", "dynamicTokenRing") === id) await game.settings.set("core", "dynamicTokenRing", "coreSteel");
 }
 
 // Dynamic ring
@@ -331,6 +403,13 @@ class FeatherFrameApp extends ApplicationV2 {
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
       ring: (id) => ringImage(getActor(id)),
+      ringId: (name) => ringId(name),
+      ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
+      uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
+      applyRing: async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); },
+      uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,
+        file: String(r.spritesheet).replace(/\?.*$/, ""), world: r.id === game.settings.get("core", "dynamicTokenRing") })) : null,
+      removeRing: (id) => removeRing(id),
     };
   }
 
@@ -502,9 +581,14 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
 
+// Sent files are named after the actor, so each send overwrites the last instead of adding files.
+// The id keeps actors with the same name apart; compendium actors also carry their pack.
+const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
+
 /* Upload a package's files and update the actor and its placed tokens. */
 async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
+  const base = fileBase(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
   const folder = game.settings.get(ID, "tokenFolder");
   const n = pkg.tokens.length;
@@ -514,7 +598,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (!wildcard) {
     progress("Uploading token...");
     const t = pkg.tokens[0];
-    tokenPath = await upload(new File([t.blob], `${safeName(t.name)}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), folder);
+    tokenPath = await upload(new File([t.blob], `${base}.webp`, { type: "image/webp" }), folder);
   } else {
     const existing = wildcard.add ? wildcardSet(actor) : null;
     const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
@@ -551,7 +635,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${safeName(p.name)}${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
@@ -563,7 +647,8 @@ async function applyPackage(actor, pkg, progress = () => {}) {
     const saved = [];
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
-      const path = await upload(new File([e.json], `${safeName(e.name)}-${id}.json`, { type: "application/json" }), editFolder);
+      const name = wildcard ? `${safeName(e.name)}-${id}` : base;
+      const path = await upload(new File([e.json], `${name}.json`, { type: "application/json" }), editFolder);
       saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
