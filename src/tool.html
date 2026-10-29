@@ -121,6 +121,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .list-hint { padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
 input[type=range] { width: 100%; accent-color: var(--brass); }
 input[type=text], select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
+input[type=color] { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px; width: 100%; height: 32px; cursor: pointer; }
 .check { display: flex; gap: 8px; align-items: center; font-size: .9rem; }
 .check input { accent-color: var(--brass); }
 kbd { font: .75rem ui-monospace, Consolas, monospace; background: var(--raise); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
@@ -376,7 +377,7 @@ header p { flex: 0 1 auto; }
       <div class="group">
         <span class="label">Ring and Preview</span>
         <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
-        <p class="hint">Preview only. The ring is saved only with Bake Ring Into Image.</p>
+        <p class="hint">Preview only. A custom ring or a background is always saved into the token; otherwise Foundry adds its own ring.</p>
         <div class="row">
           <label class="btn" for="ringFile">Upload Ring...</label>
           <input id="ringFile" type="file" accept="image/*" hidden>
@@ -384,13 +385,39 @@ header p { flex: 0 1 auto; }
           <button class="btn" id="ringLib">Saved Rings...</button>
         </div>
         <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
-        <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
-        <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
-        <p class="hint">Lines a custom ring up with the image circle.</p>
-        <label class="check"><input type="checkbox" id="ringFront"> Bring Ring to Front</label>
-        <p class="hint">Draws the ring over the image instead of behind it.</p>
+        <div class="row">
+          <label class="btn" for="backFile">Upload Background...</label>
+          <input id="backFile" type="file" accept="image/*" hidden>
+          <button class="btn" id="backClear" hidden>No Background</button>
+          <button class="btn" id="backLib">Saved Backgrounds...</button>
+        </div>
+        <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
+        <div class="group" id="backSizeRow" hidden style="gap:6px">
+          <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
+          <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+        </div>
+        <div class="group" id="ringSizeRow" hidden style="gap:6px">
+          <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
+          <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
+          <p class="hint">Lines a custom ring up with the image circle.</p>
+        </div>
         <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
         <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
+        <div class="group" id="tintRow" hidden style="gap:6px">
+          <label class="check"><input type="checkbox" id="tintOn" checked> Ring Tint</label>
+          <p class="hint">The part of the ring Foundry recolors for ring colors, damage flashes and pulses. Hover here to see where it starts and ends.</p>
+          <div class="group" id="tintSliders" style="gap:6px">
+            <label class="label" for="tintStart">Tint start <span id="tintStartVal">86%</span></label>
+            <input type="range" id="tintStart" min="50" max="142" step="0.5" value="86">
+            <label class="label" for="tintEnd">Tint end <span id="tintEndVal">100%</span></label>
+            <input type="range" id="tintEnd" min="50" max="142" step="0.5" value="100">
+            <label class="label" for="tintColor">Tint color</label>
+            <input type="color" id="tintColor" value="#ffffff">
+            <p class="hint">Tokens without a ring color of their own use this one. Foundry keeps only the red channel's brightness inside the tint.</p>
+          </div>
+          <button class="btn" id="ringUp" hidden>Create Dynamic Ring...</button>
+        </div>
+        <button class="btn" id="upRings" hidden>Remove Dynamic Rings...</button>
         <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
         <p class="hint">Faintly shows the parts of the image that get cut off.</p>
         <label class="check"><input type="checkbox" id="showBox" checked> Show Grid Box</label>
@@ -406,8 +433,7 @@ header p { flex: 0 1 auto; }
           <select id="quality" aria-label="WebP quality"><option value="0.9">Quality 90</option><option value="0.95">Quality 95</option><option value="1">Lossless</option><option value="0.8">Quality 80</option></select>
         </div>
         <p class="hint">Size comes from the template unless you pick one. Higher quality means sharper, larger files.</p>
-        <label class="check"><input type="checkbox" id="bakeRing"> Bake Ring Into Image</label>
-        <p class="hint">Saves the ring into the image, for VTTs without dynamic rings.</p>
+        <p class="hint info" id="bakeInfo" hidden>The custom ring is saved into the token image.</p>
         <button class="btn primary" id="saveOne" disabled>Save Token</button>
       </div>
     </aside>
@@ -463,17 +489,43 @@ header p { flex: 0 1 auto; }
     </div>
   </div>
 </div>
+<div class="lib" id="ringUpDlg" hidden role="dialog" aria-modal="true" aria-labelledby="ringUpTitle">
+  <div class="lib-box send-box">
+    <div class="lib-head"><h2 id="ringUpTitle">Create Dynamic Ring</h2></div>
+    <div class="send-body">
+      <label class="label" for="ringUpName">Ring name</label>
+      <input type="text" id="ringUpName" spellcheck="false">
+      <p class="hint">Shown in Foundry's Dynamic Token Rings setting. Uploading again under the same name replaces that ring.</p>
+      <p class="hint info send-status" id="ringUpStatus"></p>
+    </div>
+    <div class="send-foot">
+      <button class="btn" id="ringUpCancel">Cancel</button>
+      <button class="btn primary" id="ringUpGo">Upload</button>
+    </div>
+  </div>
+</div>
+<div class="lib" id="upList" hidden role="dialog" aria-modal="true" aria-labelledby="upListTitle">
+  <div class="lib-box send-box">
+    <div class="lib-head"><h2 id="upListTitle">Remove Dynamic Rings</h2></div>
+    <div class="send-body">
+      <p class="hint">Removing a ring takes it off Foundry's Dynamic Token Rings list after the next reload. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
+      <div class="group" id="upListRows" style="gap:8px"></div>
+      <p class="hint info" id="upListEmpty">No rings uploaded yet.</p>
+    </div>
+    <div class="send-foot"><button class="btn" id="upListClose">Close</button></div>
+  </div>
+</div>
 <div class="lib" id="lib" hidden role="dialog" aria-modal="true" aria-labelledby="libTitle">
   <div class="lib-box">
     <div class="lib-head">
       <h2 id="libTitle">Saved rings</h2>
       <div class="row">
-        <label class="btn" for="ringFile">Upload a ring...</label>
+        <label class="btn" for="ringFile" id="libUpload">Upload a ring...</label>
         <button class="btn" id="libClose">Close</button>
       </div>
     </div>
     <div class="lib-grid" id="libGrid"></div>
-    <p class="lib-empty" id="libEmpty">No saved rings yet. Every ring you upload is saved here with its size and front/behind setting.</p>
+    <p class="lib-empty" id="libEmpty">No saved rings yet. Every ring you upload is saved here with its size.</p>
   </div>
 </div>
 
@@ -508,16 +560,22 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true };
+// Ring tint defaults. Start and end are percentages of the ring image's half-width; 86% is a custom ring's inner edge
+// and 142% reaches the image's corners.
+const TINT = { tintOn: true, tintStart: 86, tintEnd: 100, tintColor: "#ffffff" };
+let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringId: null, ringCut: true, backScale: 100, backId: null, ...TINT };
 let ringCustom = false, ringPix = null, ringFrame = null;
+let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
+delete prefs.bakeRing; delete prefs.ringFront; // settings that no longer exist
 function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
-$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut; $("bakeRing").checked = prefs.bakeRing;
+$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringCut").checked = prefs.ringCut;
+$("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; draw();
+    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -528,32 +586,37 @@ const RingDB = {
   open() {
     if (this.db) return Promise.resolve(this.db);
     return new Promise((res, rej) => {
-      let rq; try { rq = indexedDB.open("ccs-rings", 1); } catch (e) { return rej(e); }
-      rq.onupgradeneeded = () => rq.result.createObjectStore("rings", { keyPath: "id" });
+      let rq; try { rq = indexedDB.open("ccs-rings", 2); } catch (e) { return rej(e); }
+      rq.onupgradeneeded = () => {
+        for (const name of ["rings", "backs"]) if (!rq.result.objectStoreNames.contains(name)) rq.result.createObjectStore(name, { keyPath: "id" });
+      };
       rq.onsuccess = () => res((this.db = rq.result)); rq.onerror = () => rej(rq.error);
     });
   },
-  async tx(mode, fn) {
+  async tx(mode, fn, store = "rings") {
     const db = await this.open();
-    return new Promise((res, rej) => { const t = db.transaction("rings", mode), st = t.objectStore("rings"); const r = fn(st); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
+    return new Promise((res, rej) => { const t = db.transaction(store, mode), st = t.objectStore(store); const r = fn(st); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
   },
-  all() { return this.tx("readonly", (s) => s.getAll()).then((a) => (a || []).sort((x, y) => x.added - y.added)); },
-  get(id) { return this.tx("readonly", (s) => s.get(id)); },
-  put(r) { return this.tx("readwrite", (s) => s.put(r)); },
-  del(id) { return this.tx("readwrite", (s) => s.delete(id)); },
+  all(store) { return this.tx("readonly", (s) => s.getAll(), store).then((a) => (a || []).sort((x, y) => x.added - y.added)); },
+  get(id, store) { return this.tx("readonly", (s) => s.get(id), store); },
+  put(r, store) { return this.tx("readwrite", (s) => s.put(r), store); },
+  del(id, store) { return this.tx("readwrite", (s) => s.delete(id), store); },
 };
 let ringRec = null, ringUrl = null;
 function applyRingSettings() {
-  $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront;
+  $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%";
+  $("tintOn").checked = prefs.tintOn; $("tintColor").value = prefs.tintColor; $("tintSliders").hidden = !prefs.tintOn;
+  for (const k of ["tintStart", "tintEnd"]) { $(k).value = prefs[k]; $(k + "Val").textContent = prefs[k] + "%"; }
 }
 function useRing(rec) {
   ringRec = rec || null;
   if (ringUrl) { URL.revokeObjectURL(ringUrl); ringUrl = null; }
+  Object.assign(prefs, TINT, rec?.tint);
   if (rec) {
-    prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100; prefs.ringFront = rec.front ?? true;
+    prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100;
     ringUrl = URL.createObjectURL(rec.blob); loadRing(ringUrl, true);
   } else {
-    prefs.ringId = null; prefs.ringScale = 100; prefs.ringFront = false; loadRing(defaultRing, false);
+    prefs.ringId = null; prefs.ringScale = 100; loadRing(defaultRing, false);
   }
   prefs.ring = true; $("showRing").checked = true;
   applyRingSettings(); savePrefs(); renderLib();
@@ -561,46 +624,91 @@ function useRing(rec) {
 let ringSaveT = 0;
 function rememberRingSettings() {
   if (!ringRec) return;
-  ringRec.scale = prefs.ringScale; ringRec.front = prefs.ringFront;
+  ringRec.scale = prefs.ringScale;
+  ringRec.tint = Object.fromEntries(Object.keys(TINT).map((k) => [k, prefs[k]]));
   clearTimeout(ringSaveT); ringSaveT = setTimeout(() => RingDB.put(ringRec).catch(() => {}), 300);
 }
+// The library window shows rings or backgrounds, depending on which button opened it.
+let libMode = "rings";
+const LIB = {
+  rings: { title: "Saved rings", upload: "Upload a ring...", input: "ringFile", what: "ring",
+    empty: "No saved rings yet. Every ring you upload is saved here with its size." },
+  backs: { title: "Saved backgrounds", upload: "Upload a background...", input: "backFile", what: "background",
+    empty: "No saved backgrounds yet. Every background you upload is saved here with its size." },
+};
+function openLib(mode) { libMode = mode; $("lib").hidden = false; renderLib(); }
 async function renderLib() {
   if ($("lib").hidden) return;
-  let rings = [];
-  try { rings = await RingDB.all(); } catch (e) { toast("This browser can't store rings, so they won't be saved between sessions.", true); }
+  const L = LIB[libMode], inUse = libMode === "rings" ? ringRec : backRec, use = libMode === "rings" ? useRing : useBack;
+  $("libTitle").textContent = L.title; $("libUpload").textContent = L.upload; $("libUpload").htmlFor = L.input; $("libEmpty").textContent = L.empty;
+  let recs = [];
+  try { recs = await RingDB.all(libMode); } catch (e) { toast(`This browser can't store ${L.what}s, so they won't be saved between sessions.`, true); }
   const grid = $("libGrid"); grid.replaceChildren();
   const card = (name, url, current, rec) => {
     const c = document.createElement("div"); c.className = "lib-card"; c.setAttribute("aria-current", current);
-    const pic = document.createElement("button"); pic.className = "pic"; pic.style.backgroundImage = `url("${url}")`;
-    pic.title = "Use this ring"; pic.setAttribute("aria-label", "Use " + name);
-    pic.onclick = () => { useRing(rec); $("lib").hidden = true; toast("Using " + name); };
+    const pic = document.createElement("button"); pic.className = "pic"; if (url) pic.style.backgroundImage = `url("${url}")`;
+    pic.title = "Use this " + L.what; pic.setAttribute("aria-label", "Use " + name);
+    pic.onclick = () => { use(rec); $("lib").hidden = true; toast("Using " + name); };
     c.append(pic);
     if (rec) {
-      const nm = document.createElement("input"); nm.type = "text"; nm.value = rec.name; nm.setAttribute("aria-label", "Ring name");
-      nm.onchange = () => { rec.name = nm.value.trim() || rec.name; RingDB.put(rec).catch(() => {}); };
+      const nm = document.createElement("input"); nm.type = "text"; nm.value = rec.name; nm.setAttribute("aria-label", L.what + " name");
+      nm.onchange = () => { rec.name = nm.value.trim() || rec.name; RingDB.put(rec, libMode).catch(() => {}); };
       const row = document.createElement("div"); row.className = "row";
-      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
+      const btn = document.createElement("button"); btn.className = "btn"; btn.textContent = current ? "In use" : "Use"; btn.onclick = pic.onclick;
       const del = document.createElement("button"); del.className = "btn"; del.textContent = "Remove";
       del.onclick = async () => {
         if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm remove"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Remove"; }, 3000); return; }
-        await RingDB.del(rec.id).catch(() => {}); URL.revokeObjectURL(url);
-        if (ringRec?.id === rec.id) useRing(null); else renderLib();
+        await RingDB.del(rec.id, libMode).catch(() => {}); URL.revokeObjectURL(url);
+        if (inUse?.id === rec.id) use(null); else renderLib();
         toast("Removed " + rec.name);
       };
-      row.append(use, del); c.append(nm, row);
+      row.append(btn, del); c.append(nm, row);
     } else {
       const lbl = document.createElement("div"); lbl.textContent = name; lbl.style.fontSize = ".9rem";
-      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
-      const row = document.createElement("div"); row.className = "row"; row.append(lbl, use); c.append(row);
+      const btn = document.createElement("button"); btn.className = "btn"; btn.textContent = current ? "In use" : "Use"; btn.onclick = pic.onclick;
+      const row = document.createElement("div"); row.className = "row"; row.append(lbl, btn); c.append(row);
     }
     grid.append(c);
   };
-  card(host ? "Foundry ring" : "Default ring", defaultRing, !ringRec, null);
-  for (const r of rings) card(r.name, URL.createObjectURL(r.blob), ringRec?.id === r.id, r);
-  $("libEmpty").hidden = rings.length > 0;
+  if (libMode === "rings") card(host ? "Foundry ring" : "Default ring", defaultRing, !ringRec, null);
+  else card("No background", null, !backRec, null);
+  for (const r of recs) card(r.name, URL.createObjectURL(r.blob), inUse?.id === r.id, r);
+  $("libEmpty").hidden = recs.length > 0;
+}
+/* Fits a newly uploaded ring by looking outward from the image's center along 360 lines.
+   The inner edge is the middle of where those lines first hit the ring, so gaps and inward spikes
+   don't throw it off. Ring size puts that edge on the image circle (radius 342) and the tint starts
+   there; the tint ends just past the farthest solid pixel. Returns null when the center is filled
+   or too few lines hit anything, and the ring comes in at 100%. */
+async function fitRing(file) {
+  let bmp; try { bmp = await createImageBitmap(file); } catch (e) { return null; }
+  const W = bmp.width, H = bmp.height, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(bmp, 0, 0); bmp.close();
+  const d = x.getImageData(0, 0, W, H).data, cx = W / 2, cy = H / 2, half = W / 2;
+  const solid = (px, py) => d[(py * W + px) * 4 + 3] > 128;
+  if (solid(Math.floor(cx), Math.floor(cy))) return null;
+  const inner = []; let outer = 0;
+  for (let a = 0; a < 360; a++) {
+    const dx = Math.cos((a * Math.PI) / 180), dy = Math.sin((a * Math.PI) / 180);
+    let first = 0;
+    for (let r = 1; ; r++) {
+      const px = Math.round(cx + dx * r), py = Math.round(cy + dy * r);
+      if (px < 0 || py < 0 || px >= W || py >= H) break;
+      if (solid(px, py)) { first ||= r; outer = Math.max(outer, r); }
+    }
+    if (first) inner.push(first);
+  }
+  if (inner.length < 180) return null;
+  inner.sort((p, q) => p - q);
+  const f = inner[inner.length >> 1] / half, step = (v) => Math.min(142, Math.max(50, Math.round(v * 2) / 2));
+  // A custom ring is drawn 793 px wide at 100%, so its inner edge sits at f * 793 / 2 px.
+  return { scale: Math.min(160, Math.max(50, Math.round(68400 / (793 * f)))),
+    tint: { ...TINT, tintStart: step(f * 100), tintEnd: step((outer / half) * 100 + 1) } };
 }
 async function addRingFile(f) {
-  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, front: false, added: Date.now() };
+  const fit = await fitRing(f);
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f,
+    scale: fit?.scale ?? 100, ...(fit && { tint: fit.tint }), added: Date.now() };
   try { await RingDB.put(rec); } catch (e) { toast("Ring loaded, but this browser can't save it for next time.", true); }
   useRing(rec);
 }
@@ -616,7 +724,7 @@ function ringPixels() {
   const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(ring, 0, 0);
   return (ringPix = { d: x.getImageData(0, 0, W, H).data, W, H });
 }
-/* Frame-only copy of a ring with an opaque center, used when the ring is drawn in front. */
+/* Frame-only copy of a ring with an opaque center, used for Inner Ring Overhang. */
 function makeFrame(im) {
   const { d, W, H } = ringPixels();
   if (d[((H >> 1) * W + (W >> 1)) * 4 + 3] <= 60) return null;
@@ -625,12 +733,78 @@ function makeFrame(im) {
   x.beginPath(); x.arc(W / 2, H / 2, (W * 342) / ringBase, 0, Math.PI * 2); x.fill();
   return c;
 }
+function setBack(file) {
+  if (backUrl) { URL.revokeObjectURL(backUrl); backUrl = null; }
+  back = null; $("backClear").hidden = $("backSizeRow").hidden = true; bakeNote();
+  if (!file) { draw(); return; }
+  const im = new Image(); backUrl = URL.createObjectURL(file);
+  im.onload = () => { back = im; $("backClear").hidden = $("backSizeRow").hidden = false; bakeNote(); draw(); };
+  im.onerror = () => { toast("Couldn't read that background image.", true); useBack(null); };
+  im.src = backUrl;
+}
+function useBack(rec) {
+  backRec = rec || null; prefs.backId = rec?.id ?? null;
+  if (rec) { prefs.backScale = rec.scale ?? 100; $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%"; }
+  setBack(rec?.blob ?? null); savePrefs(); renderLib();
+}
+let backSaveT = 0;
+function rememberBackSettings() {
+  if (!backRec) return;
+  backRec.scale = prefs.backScale;
+  clearTimeout(backSaveT); backSaveT = setTimeout(() => RingDB.put(backRec, "backs").catch(() => {}), 300);
+}
+async function addBackFile(f) {
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, added: Date.now() };
+  try { await RingDB.put(rec, "backs"); } catch (e) { toast("Background loaded, but this browser can't save it for next time.", true); }
+  useBack(rec);
+}
+(async () => {
+  try { const rec = prefs.backId && (await RingDB.get(prefs.backId, "backs")); if (rec) useBack(rec); } catch (e) { /* storage unavailable */ }
+})();
+/* Sized like the ring image, since ring backgrounds come padded to match their ring. Clipped to the inner circle. */
+function drawBack(x, T) {
+  if (!back) return;
+  const r = T.r * (prefs.ringScale / 100), size = ringRect(T)[2] * (prefs.backScale / 100);
+  const k = size / Math.min(back.naturalWidth, back.naturalHeight);
+  const w = back.naturalWidth * k, h = back.naturalHeight * k;
+  x.save(); x.beginPath(); x.arc(T.cx, T.cy, r, 0, Math.PI * 2); x.clip();
+  x.drawImage(back, T.cx - w / 2, T.cy - h / 2, w, h); x.restore();
+}
 function ringRect(T) {
   const rs = ringBase * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
   return [T.cx - rs / 2, T.cy - rh / 2, rs, rh];
 }
 
-const innerOverhang = () => prefs.ringCut && ringCustom && !prefs.ringFront;
+/* A custom ring as Foundry's ring shader colors it: inside the tint band, each pixel becomes the
+   tint color scaled by the pixel's red channel. Rebuilt only when the ring or the tint changes. */
+let tintPix = null;
+const tintOn = () => prefs.tintOn && ringCustom;
+function tintedRing() {
+  const key = [objId(ring), prefs.tintStart, prefs.tintEnd, prefs.tintColor].join("|");
+  if (tintPix?.key === key) return tintPix;
+  const { d, W, H } = ringPixels(), out = new ImageData(new Uint8ClampedArray(d), W, H), o = out.data;
+  const r0 = (prefs.tintStart / 100) * (W / 2), r1 = (prefs.tintEnd / 100) * (W / 2), n = parseInt(prefs.tintColor.slice(1), 16);
+  const tc = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  for (let y = 0; y < H; y++) for (let px = 0; px < W; px++) {
+    const dist = Math.hypot(px + 0.5 - W / 2, y + 0.5 - H / 2);
+    if (dist < r0 || dist >= r1) continue;
+    const i = (y * W + px) * 4, red = o[i] / 255;
+    o[i] = tc[0] * red; o[i + 1] = tc[1] * red; o[i + 2] = tc[2] * red;
+  }
+  const c = document.createElement("canvas"); c.width = W; c.height = H; c.getContext("2d").putImageData(out, 0, 0);
+  return (tintPix = { key, ring: c, frame: makeFrame(c) });
+}
+const shownRing = () => (tintOn() ? tintedRing() : { ring, frame: ringFrame });
+/* Dashed circles at the tint band's edges, shown while the pointer or focus is on the tint controls. */
+function drawTintBand(T) {
+  if (!tintOn() || !$("tintRow").matches(":hover, :focus-within")) return;
+  const half = ringRect(T)[2] / 2, px = DPR() / cam.s;
+  vctx.save(); vctx.strokeStyle = "#9fd39a"; vctx.lineWidth = 1.5 * px; vctx.setLineDash([6 * px, 4 * px]);
+  for (const p of [prefs.tintStart, prefs.tintEnd]) { vctx.beginPath(); vctx.arc(T.cx, T.cy, (half * p) / 100, 0, Math.PI * 2); vctx.stroke(); }
+  vctx.restore();
+}
+
+const innerOverhang = () => prefs.ringCut && ringCustom;
 /* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
 const overC = document.createElement("canvas"), octx = overC.getContext("2d");
 const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
@@ -972,7 +1146,9 @@ function drawNow() {
   drawCompare(T);
   if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
   const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
-  if (ringOn && (!prefs.ringFront || ringFrame)) vctx.drawImage(ring, ...ringRect(T));
+  const shown = ringOn ? shownRing() : null;
+  drawBack(vctx, T); // background first, so the ring sits over it
+  if (ringOn) vctx.drawImage(shown.ring, ...ringRect(T));
   // Token layer
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
   toCam(cctx); cctx.imageSmoothingQuality = "high"; cctx.imageSmoothingEnabled = S * cur.s < 3;
@@ -981,10 +1157,10 @@ function drawNow() {
   toCam(mctx); drawMaskShapes(mctx, cur);
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskC, 0, 0); cctx.globalCompositeOperation = "source-over";
   vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.drawImage(comp, 0, 0); toCam(vctx);
-  if (ringOn && prefs.ringFront) drawRingOver(vctx, cur, ringFrame || ring, false);
-  if (ringOn && innerOverhang()) drawRingOver(vctx, cur, ringFrame || ring, true);
+  if (ringOn && innerOverhang()) drawRingOver(vctx, cur, shown.frame || shown.ring, true);
   if (!prefs.ring) { vctx.strokeStyle = "rgba(201,164,106,.7)"; vctx.lineWidth = 2 / S * DPR(); vctx.beginPath(); vctx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); vctx.stroke(); }
   if (prefs.box) drawBox(T);
+  if (ringOn) drawTintBand(T);
   drawCompareUi(T);
   drawSel();
   if (pointer && (mode === "restore" || mode === "erase") && !spaceDown) {
@@ -1289,15 +1465,99 @@ $("zoom").oninput = (e) => {
 $("zoom").onchange = () => { zoomRec = false; persistSoon(); };
 $("showRing").onchange = (e) => { prefs.ring = e.target.checked; savePrefs(); draw(); };
 $("ringScale").oninput = (e) => { prefs.ringScale = +e.target.value; $("ringScaleVal").textContent = prefs.ringScale + "%"; savePrefs(); rememberRingSettings(); draw(); };
-$("ringFront").onchange = (e) => { prefs.ringFront = e.target.checked; savePrefs(); rememberRingSettings(); draw(); };
-$("bakeRing").onchange = (e) => { prefs.bakeRing = e.target.checked; savePrefs(); schedulePreview(); };
 $("ringCut").onchange = (e) => { prefs.ringCut = e.target.checked; savePrefs(); draw(); };
+// Tint start can't pass tint end; dragging one past the other pushes it along.
+function setTint(e) {
+  const id = e.target.id;
+  if (id === "tintOn") prefs.tintOn = e.target.checked;
+  else if (id === "tintColor") prefs.tintColor = e.target.value;
+  else {
+    prefs[id] = +e.target.value;
+    if (prefs.tintStart > prefs.tintEnd) prefs[id === "tintStart" ? "tintEnd" : "tintStart"] = prefs[id];
+  }
+  applyRingSettings(); savePrefs(); rememberRingSettings(); draw();
+}
+for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
+for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
+// Remove Dynamic Rings (GMs inside Foundry): lists uploaded rings and takes them off Foundry's list.
+function renderUpList() {
+  const rows = $("upListRows"), list = host.uploadedRings(); rows.replaceChildren();
+  $("upListEmpty").hidden = list.length > 0;
+  for (const r of list) {
+    const row = document.createElement("div"); row.className = "row"; row.style.justifyContent = "space-between";
+    const info = document.createElement("div"), nm = document.createElement("div"), file = document.createElement("div");
+    nm.textContent = r.label + (r.world ? " (world's ring)" : ""); file.className = "hint"; file.textContent = r.file;
+    info.append(nm, file);
+    const del = document.createElement("button"); del.className = "btn mini"; del.textContent = "Remove";
+    del.onclick = async () => {
+      if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm remove"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Remove"; }, 3000); return; }
+      try {
+        await host.removeRing(r.id);
+        toast(r.world ? `Removed ${r.label}. The world's ring is back to Foundry's Steel ring after a reload.` : `Removed ${r.label}. It leaves Foundry's list after a reload.`);
+      } catch (err) { toast("Couldn't remove: " + (err?.message || err), true); }
+      renderUpList();
+    };
+    row.append(info, del); rows.append(row);
+  }
+}
+$("upRings").onclick = () => { renderUpList(); $("upList").hidden = false; };
+$("upListClose").onclick = () => ($("upList").hidden = true);
+
+// Create Dynamic Ring (GMs inside Foundry). A name that matches an uploaded ring asks before replacing it.
+// After uploading, the dialog offers Apply & Reload (make it the world's ring now) or Save to Options.
+let ringUpDone = null; // id of the ring just uploaded, while those two choices are shown
+function ringUpReset() {
+  const go = $("ringUpGo"), st = $("ringUpStatus");
+  go.textContent = "Upload"; go.dataset.armed = ""; st.textContent = ""; st.className = "hint info send-status";
+  ringUpDone = null; $("ringUpName").disabled = false; $("ringUpCancel").textContent = "Cancel";
+}
+$("ringUp").onclick = () => { $("ringUpName").value = ringRec?.name ?? ""; ringUpReset(); $("ringUpDlg").hidden = false; $("ringUpName").focus(); };
+$("ringUpName").oninput = ringUpReset;
+$("ringUpCancel").onclick = () => {
+  if (ringUpDone) toast(`${$("ringUpName").value.trim()} will be in Foundry's Dynamic Token Rings setting after the next reload.`);
+  $("ringUpDlg").hidden = true;
+};
+$("ringUpGo").onclick = async () => {
+  const name = $("ringUpName").value.trim(), go = $("ringUpGo"), st = $("ringUpStatus");
+  if (ringUpDone) {
+    go.disabled = $("ringUpCancel").disabled = true; st.textContent = "Reloading...";
+    try { await persistNow(); await host.applyRing(ringUpDone); }
+    catch (err) { st.textContent = "Couldn't apply: " + (err?.message || err); st.className = "hint info send-status err"; go.disabled = $("ringUpCancel").disabled = false; }
+    return;
+  }
+  if (!name) { st.textContent = "Give the ring a name."; return; }
+  const id = host.ringId(name), old = host.ringLabel(id);
+  if (old && go.dataset.armed !== "1") {
+    go.dataset.armed = "1"; go.textContent = "Replace";
+    st.textContent = `A ring named "${old}" already exists. Click Replace to overwrite it.`; return;
+  }
+  go.disabled = $("ringUpCancel").disabled = true;
+  try {
+    st.textContent = "Building the spritesheet...";
+    const { image, json } = await buildRingSheet(id);
+    st.textContent = "Uploading...";
+    await host.uploadRing({ name, image, json });
+    ringUpDone = id; $("ringUpName").disabled = true;
+    go.textContent = "Apply & Reload"; $("ringUpCancel").textContent = "Save to Options";
+    st.textContent = `Uploaded ${name}. Apply & Reload makes it the world's ring now; the page reloads twice. Save to Options adds it to Foundry's Dynamic Token Rings list to pick later.`
+      + (items.length && listMode() !== "keep" ? " Reloading clears your token list unless it's set to Keep Until Removed." : "");
+  } catch (err) {
+    st.textContent = "Couldn't upload: " + (err?.message || err); st.className = "hint info send-status err";
+  } finally { go.disabled = $("ringUpCancel").disabled = false; }
+};
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
 };
 $("ringReset").onclick = () => useRing(null);
-$("ringLib").onclick = () => { $("lib").hidden = false; renderLib(); };
+$("backFile").onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  addBackFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your backgrounds"));
+};
+$("backClear").onclick = () => useBack(null);
+$("backScale").oninput = (e) => { prefs.backScale = +e.target.value; $("backScaleVal").textContent = prefs.backScale + "%"; savePrefs(); rememberBackSettings(); draw(); };
+$("ringLib").onclick = () => openLib("rings");
+$("backLib").onclick = () => openLib("backs");
 $("libClose").onclick = () => { $("lib").hidden = true; };
 $("lib").addEventListener("click", (e) => { if (e.target === $("lib")) $("lib").hidden = true; });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("lib").hidden) { $("lib").hidden = true; e.stopImmediatePropagation(); } }, true);
@@ -1427,7 +1687,11 @@ function makeZip(files) {
 }
 let downloads = null;
 
-function bakedRing() { return !!(prefs.bakeRing && ring.naturalWidth); }
+function bakedRing() { return !!((ringCustom || back) && ring.naturalWidth); }
+function bakeNote() {
+  $("bakeInfo").hidden = !(ringCustom || back);
+  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image." : "The custom ring is saved into the token image.";
+}
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
 function composeToken(it, size, withRing) {
   let c = renderToken(it, size);
@@ -1436,10 +1700,10 @@ function composeToken(it, size, withRing) {
     const x = out.getContext("2d"), k = size / 1024, [rx, ry, rw, rh] = ringRect(TPL[it.tpl]);
     x.imageSmoothingQuality = "high";
     const ringLayer = (img) => x.drawImage(img, rx * k, ry * k, rw * k, rh * k);
-    if (!prefs.ringFront || ringFrame) ringLayer(ring);
+    x.setTransform(k, 0, 0, k, 0, 0); drawBack(x, TPL[it.tpl]); x.setTransform(1, 0, 0, 1, 0, 0);
+    ringLayer(ring);
     x.drawImage(c, 0, 0);
     x.setTransform(k, 0, 0, k, 0, 0);
-    if (prefs.ringFront) drawRingOver(x, it, ringFrame || ring, false);
     if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
     x.setTransform(1, 0, 0, 1, 0, 0);
     c = out;
@@ -1450,6 +1714,38 @@ function encode(it) {
   const size = it.size && it.size !== "auto" ? +it.size : it.tpl === "big" ? 2048 : 1024, q = +prefs.quality;
   const c = composeToken(it, size, bakedRing());
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", q));
+}
+/* Spritesheet for a Foundry dynamic ring, built from the ring, background and tint in the tool.
+   Each size has a background frame and a ring frame side by side: 2048 on the top row, then 1024,
+   512 and 256 below. Every frame matches the 1024 token canvas, so the ring sits on the token the
+   way the preview shows it. Frame names start with the ring's id so they can't clash with other sheets. */
+const SHEET = [
+  { size: 2048, x: 0, y: 0, grid: 3 },
+  { size: 1024, x: 0, y: 2048, grid: 2 },
+  { size: 512, x: 2048, y: 2048, grid: 1 },
+  { size: 256, x: 3072, y: 2048, grid: 0.5 },
+];
+async function buildRingSheet(id) {
+  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T);
+  const img = document.createElement("canvas"); img.width = 4096; img.height = 3072;
+  const x = img.getContext("2d"); x.imageSmoothingQuality = "high";
+  const frame = (fx, fy, s, extra) => ({ frame: { x: fx, y: fy, w: s, h: s }, rotated: false, trimmed: false,
+    spriteSourceSize: { x: 0, y: 0, w: s, h: s }, sourceSize: { w: s, h: s }, anchor: { x: 0.5, y: 0.5 }, ...extra });
+  const frames = {};
+  for (const { size: s, x: fx, y: fy, grid } of SHEET) {
+    const k = s / 1024, name = `${id}-${s}`;
+    x.save(); x.beginPath(); x.rect(fx, fy, s, s); x.clip(); x.setTransform(k, 0, 0, k, fx, fy); drawBack(x, T); x.restore();
+    x.save(); x.beginPath(); x.rect(fx + s, fy, s, s); x.clip(); x.drawImage(ring, fx + s + rx * k, fy + ry * k, rw * k, rh * k); x.restore();
+    frames[`${name}-bkg`] = frame(fx, fy, s);
+    frames[name] = frame(fx + s, fy, s, { gridTarget: grid });
+  }
+  // Foundry measures the band from the center, with 1 at the frame's edge (512 px on the canvas).
+  const half = rw / 2 / 512, r = (p) => Math.round((p / 100) * half * 1e4) / 1e4;
+  const band = prefs.tintOn ? { startRadius: r(prefs.tintStart), endRadius: r(prefs.tintEnd) } : { startRadius: 0, endRadius: 0 };
+  const json = { frames, config: { defaultColorBand: band, defaultRingColor: prefs.tintColor },
+    meta: { app: "Feather & Frame", image: `${id}.webp`, format: "RGBA8888", size: { w: img.width, h: img.height }, scale: "1" } };
+  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", +prefs.quality));
+  return { image, json };
 }
 async function saveBlob(name, blob) {
   if (downloads) {
@@ -1508,7 +1804,7 @@ const objId = (o) => (o ? objIds.get(o) ?? (objIds.set(o, ++objN), objN) : 0);
 function sigOf(it) {
   const last = it.strokes[it.strokes.length - 1];
   return [it.id, it.s, it.ox, it.oy, it.tpl, JSON.stringify(it.keep), it.strokes.length, last?.pts?.length ?? 0, objId(it.img),
-    prefs.ringFront, prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame)].join("|");
+    prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame), objId(back), prefs.backScale].join("|");
 }
 function cmpCanvas(it) {
   const sig = sigOf(it) + "|" + prefs.ring, hit = cmpCache.get(it.id);
@@ -1688,6 +1984,7 @@ async function foundryRing(id) {
 function attachHost(h, actorId) {
   host = h;
   $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
+  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings;
   const sel = $("actorSel");
   for (const a of host.actors()) sel.add(new Option(a.name, a.id));
   setActor(actorId || "");
