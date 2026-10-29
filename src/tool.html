@@ -387,6 +387,19 @@ header p { flex: 0 1 auto; }
         <p class="hint">Lines a custom ring up with the image circle.</p>
         <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
         <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
+        <div class="group" id="tintRow" hidden style="gap:6px">
+          <label class="check"><input type="checkbox" id="tintOn" checked> Ring Tint</label>
+          <p class="hint">The part of the ring Foundry recolors for ring colors, damage flashes and pulses. Hover here to see where it starts and ends.</p>
+          <div class="group" id="tintSliders" style="gap:6px">
+            <label class="label" for="tintStart">Tint start <span id="tintStartVal">86%</span></label>
+            <input type="range" id="tintStart" min="50" max="142" step="0.5" value="86">
+            <label class="label" for="tintEnd">Tint end <span id="tintEndVal">100%</span></label>
+            <input type="range" id="tintEnd" min="50" max="142" step="0.5" value="100">
+            <label class="label" for="tintColor">Tint color</label>
+            <input type="color" id="tintColor" value="#ffffff">
+            <p class="hint">Tokens without a ring color of their own use this one. Foundry keeps only the red channel's brightness inside the tint.</p>
+          </div>
+        </div>
         <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
         <p class="hint">Faintly shows the parts of the image that get cut off.</p>
         <label class="check"><input type="checkbox" id="showBox" checked> Show Grid Box</label>
@@ -503,7 +516,10 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringId: null, ringCut: true, backScale: 100, backId: null };
+// Ring tint defaults. Start and end are percentages of the ring image's half-width; 86% is a custom ring's inner edge
+// and 142% reaches the image's corners.
+const TINT = { tintOn: true, tintStart: 86, tintEnd: 100, tintColor: "#ffffff" };
+let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringId: null, ringCut: true, backScale: 100, backId: null, ...TINT };
 let ringCustom = false, ringPix = null, ringFrame = null;
 let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
@@ -515,7 +531,7 @@ $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.ba
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; bakeNote(); draw();
+    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -545,10 +561,13 @@ const RingDB = {
 let ringRec = null, ringUrl = null;
 function applyRingSettings() {
   $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%";
+  $("tintOn").checked = prefs.tintOn; $("tintColor").value = prefs.tintColor; $("tintSliders").hidden = !prefs.tintOn;
+  for (const k of ["tintStart", "tintEnd"]) { $(k).value = prefs[k]; $(k + "Val").textContent = prefs[k] + "%"; }
 }
 function useRing(rec) {
   ringRec = rec || null;
   if (ringUrl) { URL.revokeObjectURL(ringUrl); ringUrl = null; }
+  Object.assign(prefs, TINT, rec?.tint);
   if (rec) {
     prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100;
     ringUrl = URL.createObjectURL(rec.blob); loadRing(ringUrl, true);
@@ -562,6 +581,7 @@ let ringSaveT = 0;
 function rememberRingSettings() {
   if (!ringRec) return;
   ringRec.scale = prefs.ringScale;
+  ringRec.tint = Object.fromEntries(Object.keys(TINT).map((k) => [k, prefs[k]]));
   clearTimeout(ringSaveT); ringSaveT = setTimeout(() => RingDB.put(ringRec).catch(() => {}), 300);
 }
 // The library window shows rings or backgrounds, depending on which button opened it.
@@ -677,6 +697,35 @@ function drawBack(x, T) {
 function ringRect(T) {
   const rs = ringBase * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
   return [T.cx - rs / 2, T.cy - rh / 2, rs, rh];
+}
+
+/* A custom ring as Foundry's ring shader colors it: inside the tint band, each pixel becomes the
+   tint color scaled by the pixel's red channel. Rebuilt only when the ring or the tint changes. */
+let tintPix = null;
+const tintOn = () => prefs.tintOn && ringCustom;
+function tintedRing() {
+  const key = [objId(ring), prefs.tintStart, prefs.tintEnd, prefs.tintColor].join("|");
+  if (tintPix?.key === key) return tintPix;
+  const { d, W, H } = ringPixels(), out = new ImageData(new Uint8ClampedArray(d), W, H), o = out.data;
+  const r0 = (prefs.tintStart / 100) * (W / 2), r1 = (prefs.tintEnd / 100) * (W / 2), n = parseInt(prefs.tintColor.slice(1), 16);
+  const tc = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  for (let y = 0; y < H; y++) for (let px = 0; px < W; px++) {
+    const dist = Math.hypot(px + 0.5 - W / 2, y + 0.5 - H / 2);
+    if (dist < r0 || dist >= r1) continue;
+    const i = (y * W + px) * 4, red = o[i] / 255;
+    o[i] = tc[0] * red; o[i + 1] = tc[1] * red; o[i + 2] = tc[2] * red;
+  }
+  const c = document.createElement("canvas"); c.width = W; c.height = H; c.getContext("2d").putImageData(out, 0, 0);
+  return (tintPix = { key, ring: c, frame: makeFrame(c) });
+}
+const shownRing = () => (tintOn() ? tintedRing() : { ring, frame: ringFrame });
+/* Dashed circles at the tint band's edges, shown while the pointer or focus is on the tint controls. */
+function drawTintBand(T) {
+  if (!tintOn() || !$("tintRow").matches(":hover, :focus-within")) return;
+  const half = ringRect(T)[2] / 2, px = DPR() / cam.s;
+  vctx.save(); vctx.strokeStyle = "#9fd39a"; vctx.lineWidth = 1.5 * px; vctx.setLineDash([6 * px, 4 * px]);
+  for (const p of [prefs.tintStart, prefs.tintEnd]) { vctx.beginPath(); vctx.arc(T.cx, T.cy, (half * p) / 100, 0, Math.PI * 2); vctx.stroke(); }
+  vctx.restore();
 }
 
 const innerOverhang = () => prefs.ringCut && ringCustom;
@@ -1021,7 +1070,8 @@ function drawNow() {
   drawCompare(T);
   if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
   const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
-  if (ringOn) vctx.drawImage(ring, ...ringRect(T));
+  const shown = ringOn ? shownRing() : null;
+  if (ringOn) vctx.drawImage(shown.ring, ...ringRect(T));
   drawBack(vctx, T);
   // Token layer
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
@@ -1031,9 +1081,10 @@ function drawNow() {
   toCam(mctx); drawMaskShapes(mctx, cur);
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskC, 0, 0); cctx.globalCompositeOperation = "source-over";
   vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.drawImage(comp, 0, 0); toCam(vctx);
-  if (ringOn && innerOverhang()) drawRingOver(vctx, cur, ringFrame || ring, true);
+  if (ringOn && innerOverhang()) drawRingOver(vctx, cur, shown.frame || shown.ring, true);
   if (!prefs.ring) { vctx.strokeStyle = "rgba(201,164,106,.7)"; vctx.lineWidth = 2 / S * DPR(); vctx.beginPath(); vctx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); vctx.stroke(); }
   if (prefs.box) drawBox(T);
+  if (ringOn) drawTintBand(T);
   drawCompareUi(T);
   drawSel();
   if (pointer && (mode === "restore" || mode === "erase") && !spaceDown) {
@@ -1339,6 +1390,19 @@ $("zoom").onchange = () => { zoomRec = false; persistSoon(); };
 $("showRing").onchange = (e) => { prefs.ring = e.target.checked; savePrefs(); draw(); };
 $("ringScale").oninput = (e) => { prefs.ringScale = +e.target.value; $("ringScaleVal").textContent = prefs.ringScale + "%"; savePrefs(); rememberRingSettings(); draw(); };
 $("ringCut").onchange = (e) => { prefs.ringCut = e.target.checked; savePrefs(); draw(); };
+// Tint start can't pass tint end; dragging one past the other pushes it along.
+function setTint(e) {
+  const id = e.target.id;
+  if (id === "tintOn") prefs.tintOn = e.target.checked;
+  else if (id === "tintColor") prefs.tintColor = e.target.value;
+  else {
+    prefs[id] = +e.target.value;
+    if (prefs.tintStart > prefs.tintEnd) prefs[id === "tintStart" ? "tintEnd" : "tintStart"] = prefs[id];
+  }
+  applyRingSettings(); savePrefs(); rememberRingSettings(); draw();
+}
+for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
+for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
