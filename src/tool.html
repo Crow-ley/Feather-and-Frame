@@ -371,6 +371,16 @@ header p { flex: 0 1 auto; }
           <button class="btn" id="ringLib">Saved Rings...</button>
         </div>
         <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
+        <div class="row">
+          <label class="btn" for="backFile">Upload Background...</label>
+          <input id="backFile" type="file" accept="image/*" hidden>
+          <button class="btn" id="backClear" hidden>No Background</button>
+        </div>
+        <p class="hint">Fills the circle behind the character. It follows the ring size.</p>
+        <div class="group" id="backSizeRow" hidden style="gap:6px">
+          <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
+          <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+        </div>
         <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
         <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
         <p class="hint">Lines a custom ring up with the image circle.</p>
@@ -495,12 +505,14 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true };
+let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100 };
 let ringCustom = false, ringPix = null, ringFrame = null;
+let back = null, backUrl = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
 function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
 $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut; $("bakeRing").checked = prefs.bakeRing;
+$("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
@@ -611,6 +623,24 @@ function makeFrame(im) {
   x.drawImage(im, 0, 0); x.globalCompositeOperation = "destination-out";
   x.beginPath(); x.arc(W / 2, H / 2, (W * 342) / ringBase, 0, Math.PI * 2); x.fill();
   return c;
+}
+function setBack(file) {
+  if (backUrl) { URL.revokeObjectURL(backUrl); backUrl = null; }
+  back = null; $("backClear").hidden = $("backSizeRow").hidden = true;
+  if (!file) { draw(); return; }
+  const im = new Image(); backUrl = URL.createObjectURL(file);
+  im.onload = () => { back = im; $("backClear").hidden = $("backSizeRow").hidden = false; draw(); };
+  im.onerror = () => { toast("Couldn't read that background image.", true); setBack(null); };
+  im.src = backUrl;
+}
+/* Sized like the ring image, since ring backgrounds come padded to match their ring. Clipped to the inner circle. */
+function drawBack(x, T) {
+  if (!back) return;
+  const r = T.r * (prefs.ringScale / 100), size = ringRect(T)[2] * (prefs.backScale / 100);
+  const k = size / Math.min(back.naturalWidth, back.naturalHeight);
+  const w = back.naturalWidth * k, h = back.naturalHeight * k;
+  x.save(); x.beginPath(); x.arc(T.cx, T.cy, r, 0, Math.PI * 2); x.clip();
+  x.drawImage(back, T.cx - w / 2, T.cy - h / 2, w, h); x.restore();
 }
 function ringRect(T) {
   const rs = ringBase * T.ring * (prefs.ringScale / 100), rh = rs * (ring.naturalHeight / ring.naturalWidth);
@@ -960,6 +990,7 @@ function drawNow() {
   if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
   const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
   if (ringOn && (!prefs.ringFront || ringFrame)) vctx.drawImage(ring, ...ringRect(T));
+  drawBack(vctx, T);
   // Token layer
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
   toCam(cctx); cctx.imageSmoothingQuality = "high"; cctx.imageSmoothingEnabled = S * cur.s < 3;
@@ -1284,6 +1315,9 @@ $("ringFile").onchange = (e) => {
   addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
 };
 $("ringReset").onclick = () => useRing(null);
+$("backFile").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) setBack(f); };
+$("backClear").onclick = () => setBack(null);
+$("backScale").oninput = (e) => { prefs.backScale = +e.target.value; $("backScaleVal").textContent = prefs.backScale + "%"; savePrefs(); draw(); };
 $("ringLib").onclick = () => { $("lib").hidden = false; renderLib(); };
 $("libClose").onclick = () => { $("lib").hidden = true; };
 $("lib").addEventListener("click", (e) => { if (e.target === $("lib")) $("lib").hidden = true; });
