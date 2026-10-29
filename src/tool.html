@@ -399,6 +399,7 @@ header p { flex: 0 1 auto; }
             <input type="color" id="tintColor" value="#ffffff">
             <p class="hint">Tokens without a ring color of their own use this one. Foundry keeps only the red channel's brightness inside the tint.</p>
           </div>
+          <button class="btn" id="sheetTest">Download Spritesheet (test)</button>
         </div>
         <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
         <p class="hint">Faintly shows the parts of the image that get cut off.</p>
@@ -1403,6 +1404,14 @@ function setTint(e) {
 }
 for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
 for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
+// Temporary, until uploading exists: downloads the ring's spritesheet as a zip so it can be checked.
+$("sheetTest").onclick = async () => {
+  const { image, json } = await buildRingSheet("ff-test");
+  saveBlob("ff-test-spritesheet.zip", makeZip([
+    { name: "ff-test.webp", data: new Uint8Array(await image.arrayBuffer()) },
+    { name: "ff-test.json", data: new TextEncoder().encode(JSON.stringify(json, null, 2)) },
+  ]));
+};
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
@@ -1572,6 +1581,38 @@ function encode(it) {
   const size = it.size && it.size !== "auto" ? +it.size : it.tpl === "big" ? 2048 : 1024, q = +prefs.quality;
   const c = composeToken(it, size, bakedRing());
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", q));
+}
+/* Spritesheet for a Foundry dynamic ring, built from the ring, background and tint in the tool.
+   Each size has a background frame and a ring frame side by side: 2048 on the top row, then 1024,
+   512 and 256 below. Every frame matches the 1024 token canvas, so the ring sits on the token the
+   way the preview shows it. Frame names start with the ring's id so they can't clash with other sheets. */
+const SHEET = [
+  { size: 2048, x: 0, y: 0, grid: 3 },
+  { size: 1024, x: 0, y: 2048, grid: 2 },
+  { size: 512, x: 2048, y: 2048, grid: 1 },
+  { size: 256, x: 3072, y: 2048, grid: 0.5 },
+];
+async function buildRingSheet(id) {
+  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T);
+  const img = document.createElement("canvas"); img.width = 4096; img.height = 3072;
+  const x = img.getContext("2d"); x.imageSmoothingQuality = "high";
+  const frame = (fx, fy, s, extra) => ({ frame: { x: fx, y: fy, w: s, h: s }, rotated: false, trimmed: false,
+    spriteSourceSize: { x: 0, y: 0, w: s, h: s }, sourceSize: { w: s, h: s }, anchor: { x: 0.5, y: 0.5 }, ...extra });
+  const frames = {};
+  for (const { size: s, x: fx, y: fy, grid } of SHEET) {
+    const k = s / 1024, name = `${id}-${s}`;
+    x.save(); x.beginPath(); x.rect(fx, fy, s, s); x.clip(); x.setTransform(k, 0, 0, k, fx, fy); drawBack(x, T); x.restore();
+    x.save(); x.beginPath(); x.rect(fx + s, fy, s, s); x.clip(); x.drawImage(ring, fx + s + rx * k, fy + ry * k, rw * k, rh * k); x.restore();
+    frames[`${name}-bkg`] = frame(fx, fy, s);
+    frames[name] = frame(fx + s, fy, s, { gridTarget: grid });
+  }
+  // Foundry measures the band from the center, with 1 at the frame's edge (512 px on the canvas).
+  const half = rw / 2 / 512, r = (p) => Math.round((p / 100) * half * 1e4) / 1e4;
+  const band = prefs.tintOn ? { startRadius: r(prefs.tintStart), endRadius: r(prefs.tintEnd) } : { startRadius: 0, endRadius: 0 };
+  const json = { frames, config: { defaultColorBand: band, defaultRingColor: prefs.tintColor },
+    meta: { app: "Feather & Frame", image: `${id}.webp`, format: "RGBA8888", size: { w: img.width, h: img.height }, scale: "1" } };
+  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", +prefs.quality));
+  return { image, json };
 }
 async function saveBlob(name, blob) {
   if (downloads) {
