@@ -20,6 +20,19 @@ Hooks.once("init", () => {
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
+  // Rings uploaded from the tool, each { id, label, spritesheet }.
+  game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
+});
+
+// Uploaded rings join Foundry's ring list. Foundry only takes new rings during this hook,
+// so a ring added later appears after a reload.
+Hooks.once("initializeDynamicTokenRingConfig", (ringConfig) => {
+  const RingData = foundry.canvas.placeables.tokens.DynamicRingData;
+  for (const r of game.settings.get(ID, "rings")) {
+    if (!r?.id) continue;
+    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet })); }
+    catch (e) { console.warn(`${TITLE} | Couldn't add ring "${r.label}"`, e); }
+  }
 });
 
 // Helpers
