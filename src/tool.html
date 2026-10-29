@@ -363,7 +363,7 @@ header p { flex: 0 1 auto; }
       <div class="group">
         <span class="label">Ring and Preview</span>
         <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
-        <p class="hint">Preview only. A custom ring is always saved into the token; the default ring is added by Foundry.</p>
+        <p class="hint">Preview only. A custom ring or a background is always saved into the token; otherwise Foundry adds its own ring.</p>
         <div class="row">
           <label class="btn" for="ringFile">Upload Ring...</label>
           <input id="ringFile" type="file" accept="image/*" hidden>
@@ -517,7 +517,7 @@ $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.ba
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; $("bakeInfo").hidden = !custom; draw();
+    $("ringReset").hidden = !custom; $("ringCutRow").hidden = $("ringCutHint").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -641,10 +641,10 @@ function makeFrame(im) {
 }
 function setBack(file) {
   if (backUrl) { URL.revokeObjectURL(backUrl); backUrl = null; }
-  back = null; $("backClear").hidden = $("backSizeRow").hidden = true;
+  back = null; $("backClear").hidden = $("backSizeRow").hidden = true; bakeNote();
   if (!file) { draw(); return; }
   const im = new Image(); backUrl = URL.createObjectURL(file);
-  im.onload = () => { back = im; $("backClear").hidden = $("backSizeRow").hidden = false; draw(); };
+  im.onload = () => { back = im; $("backClear").hidden = $("backSizeRow").hidden = false; bakeNote(); draw(); };
   im.onerror = () => { toast("Couldn't read that background image.", true); useBack(null); };
   im.src = backUrl;
 }
@@ -1485,7 +1485,11 @@ function makeZip(files) {
 }
 let downloads = null;
 
-function bakedRing() { return !!(ringCustom && ring.naturalWidth); }
+function bakedRing() { return !!((ringCustom || back) && ring.naturalWidth); }
+function bakeNote() {
+  $("bakeInfo").hidden = !(ringCustom || back);
+  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image." : "The custom ring is saved into the token image.";
+}
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
 function composeToken(it, size, withRing) {
   let c = renderToken(it, size);
@@ -1495,6 +1499,7 @@ function composeToken(it, size, withRing) {
     x.imageSmoothingQuality = "high";
     const ringLayer = (img) => x.drawImage(img, rx * k, ry * k, rw * k, rh * k);
     if (!prefs.ringFront || ringFrame) ringLayer(ring);
+    x.setTransform(k, 0, 0, k, 0, 0); drawBack(x, TPL[it.tpl]); x.setTransform(1, 0, 0, 1, 0, 0);
     x.drawImage(c, 0, 0);
     x.setTransform(k, 0, 0, k, 0, 0);
     if (prefs.ringFront) drawRingOver(x, it, ringFrame || ring, false);
@@ -1566,7 +1571,7 @@ const objId = (o) => (o ? objIds.get(o) ?? (objIds.set(o, ++objN), objN) : 0);
 function sigOf(it) {
   const last = it.strokes[it.strokes.length - 1];
   return [it.id, it.s, it.ox, it.oy, it.tpl, JSON.stringify(it.keep), it.strokes.length, last?.pts?.length ?? 0, objId(it.img),
-    prefs.ringFront, prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame)].join("|");
+    prefs.ringFront, prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame), objId(back), prefs.backScale].join("|");
 }
 function cmpCanvas(it) {
   const sig = sigOf(it) + "|" + prefs.ring, hit = cmpCache.get(it.id);
