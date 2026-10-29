@@ -369,6 +369,7 @@ header p { flex: 0 1 auto; }
           <input id="ringFile" type="file" accept="image/*" hidden>
           <button class="btn" id="ringReset" hidden>Default Ring</button>
           <button class="btn" id="ringLib">Saved Rings...</button>
+          <button class="btn" id="upRings" hidden>Uploaded Rings...</button>
         </div>
         <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
         <div class="row">
@@ -485,6 +486,17 @@ header p { flex: 0 1 auto; }
       <button class="btn" id="ringUpCancel">Cancel</button>
       <button class="btn primary" id="ringUpGo">Upload</button>
     </div>
+  </div>
+</div>
+<div class="lib" id="upList" hidden role="dialog" aria-modal="true" aria-labelledby="upListTitle">
+  <div class="lib-box send-box">
+    <div class="lib-head"><h2 id="upListTitle">Uploaded Rings</h2></div>
+    <div class="send-body">
+      <p class="hint">Removing a ring takes it off Foundry's Dynamic Token Rings list after the next reload. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
+      <div class="group" id="upListRows" style="gap:8px"></div>
+      <p class="hint info" id="upListEmpty">No rings uploaded yet.</p>
+    </div>
+    <div class="send-foot"><button class="btn" id="upListClose">Close</button></div>
   </div>
 </div>
 <div class="lib" id="lib" hidden role="dialog" aria-modal="true" aria-labelledby="libTitle">
@@ -1451,6 +1463,30 @@ function setTint(e) {
 }
 for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
 for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
+// Uploaded Rings (GMs inside Foundry): lists uploaded rings and takes them off Foundry's list.
+function renderUpList() {
+  const rows = $("upListRows"), list = host.uploadedRings(); rows.replaceChildren();
+  $("upListEmpty").hidden = list.length > 0;
+  for (const r of list) {
+    const row = document.createElement("div"); row.className = "row"; row.style.justifyContent = "space-between";
+    const info = document.createElement("div"), nm = document.createElement("div"), file = document.createElement("div");
+    nm.textContent = r.label + (r.world ? " (world's ring)" : ""); file.className = "hint"; file.textContent = r.file;
+    info.append(nm, file);
+    const del = document.createElement("button"); del.className = "btn mini"; del.textContent = "Remove";
+    del.onclick = async () => {
+      if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm remove"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Remove"; }, 3000); return; }
+      try {
+        await host.removeRing(r.id);
+        toast(r.world ? `Removed ${r.label}. The world's ring is back to Foundry's Steel ring after a reload.` : `Removed ${r.label}. It leaves Foundry's list after a reload.`);
+      } catch (err) { toast("Couldn't remove: " + (err?.message || err), true); }
+      renderUpList();
+    };
+    row.append(info, del); rows.append(row);
+  }
+}
+$("upRings").onclick = () => { renderUpList(); $("upList").hidden = false; };
+$("upListClose").onclick = () => ($("upList").hidden = true);
+
 // Upload as Dynamic Ring (GMs inside Foundry). A name that matches an uploaded ring asks before replacing it.
 // After uploading, the dialog offers Apply & Reload (make it the world's ring now) or Save to Options.
 let ringUpDone = null; // id of the ring just uploaded, while those two choices are shown
@@ -1855,7 +1891,7 @@ async function foundryRing(id) {
 function attachHost(h, actorId) {
   host = h;
   $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
-  $("ringUp").hidden = !host.uploadRing;
+  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings;
   const sel = $("actorSel");
   for (const a of host.actors()) sel.add(new Option(a.name, a.id));
   setActor(actorId || "");

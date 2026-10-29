@@ -129,6 +129,15 @@ async function uploadRing({ name, image, json }) {
   if (i < 0) rings.push(entry); else rings[i] = entry;
   await game.settings.set(ID, "rings", rings);
 }
+// Takes an uploaded ring off Foundry's list. Its files stay, since Foundry gives modules no way to
+// delete files; uploading under the same name later just writes over them. If it was the world's
+// ring, the world goes back to Foundry's Steel ring so it never points at a ring that isn't there.
+async function removeRing(id) {
+  if (!game.user.isGM) throw new Error("only a GM can remove dynamic rings");
+  await game.settings.set(ID, "rings", game.settings.get(ID, "rings").filter((r) => r?.id !== id));
+  if (game.settings.get(ID, "applyRing") === id) await game.settings.set(ID, "applyRing", "");
+  if (game.settings.get("core", "dynamicTokenRing") === id) await game.settings.set("core", "dynamicTokenRing", "coreSteel");
+}
 
 // Dynamic ring
 // The module ships no ring art. It reads the spritesheet of the ring this actor's token uses and
@@ -402,6 +411,9 @@ class FeatherFrameApp extends ApplicationV2 {
       ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
       applyRing: async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); },
+      uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,
+        file: String(r.spritesheet).replace(/\?.*$/, ""), world: r.id === game.settings.get("core", "dynamicTokenRing") })) : null,
+      removeRing: (id) => removeRing(id),
     };
   }
 
