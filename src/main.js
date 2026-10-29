@@ -502,9 +502,14 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
 
+// Sent files are named after the actor, so each send overwrites the last instead of adding files.
+// The id keeps actors with the same name apart; compendium actors also carry their pack.
+const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
+
 /* Upload a package's files and update the actor and its placed tokens. */
 async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
+  const base = fileBase(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
   const folder = game.settings.get(ID, "tokenFolder");
   const n = pkg.tokens.length;
@@ -514,7 +519,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (!wildcard) {
     progress("Uploading token...");
     const t = pkg.tokens[0];
-    tokenPath = await upload(new File([t.blob], `${safeName(t.name)}${baked ? "-ringed" : ""}.webp`, { type: "image/webp" }), folder);
+    tokenPath = await upload(new File([t.blob], `${base}.webp`, { type: "image/webp" }), folder);
   } else {
     const existing = wildcard.add ? wildcardSet(actor) : null;
     const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
@@ -551,7 +556,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${safeName(p.name)}${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
@@ -563,7 +568,8 @@ async function applyPackage(actor, pkg, progress = () => {}) {
     const saved = [];
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
-      const path = await upload(new File([e.json], `${safeName(e.name)}-${id}.json`, { type: "application/json" }), editFolder);
+      const name = wildcard ? `${safeName(e.name)}-${id}` : base;
+      const path = await upload(new File([e.json], `${name}.json`, { type: "application/json" }), editFolder);
       saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
