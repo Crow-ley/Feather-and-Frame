@@ -399,7 +399,7 @@ header p { flex: 0 1 auto; }
             <input type="color" id="tintColor" value="#ffffff">
             <p class="hint">Tokens without a ring color of their own use this one. Foundry keeps only the red channel's brightness inside the tint.</p>
           </div>
-          <button class="btn" id="sheetTest">Download Spritesheet (test)</button>
+          <button class="btn" id="ringUp" hidden>Upload as Dynamic Ring...</button>
         </div>
         <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
         <p class="hint">Faintly shows the parts of the image that get cut off.</p>
@@ -469,6 +469,21 @@ header p { flex: 0 1 auto; }
     <div class="send-foot">
       <button class="btn" id="sendCancel">Cancel</button>
       <button class="btn primary" id="sendGo">Send to Actor</button>
+    </div>
+  </div>
+</div>
+<div class="lib" id="ringUpDlg" hidden role="dialog" aria-modal="true" aria-labelledby="ringUpTitle">
+  <div class="lib-box send-box">
+    <div class="lib-head"><h2 id="ringUpTitle">Upload as Dynamic Ring</h2></div>
+    <div class="send-body">
+      <label class="label" for="ringUpName">Ring name</label>
+      <input type="text" id="ringUpName" spellcheck="false">
+      <p class="hint">Shown in Foundry's Dynamic Token Rings setting. Uploading again under the same name replaces that ring.</p>
+      <p class="hint info send-status" id="ringUpStatus"></p>
+    </div>
+    <div class="send-foot">
+      <button class="btn" id="ringUpCancel">Cancel</button>
+      <button class="btn primary" id="ringUpGo">Upload</button>
     </div>
   </div>
 </div>
@@ -1436,13 +1451,33 @@ function setTint(e) {
 }
 for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
 for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
-// Temporary, until uploading exists: downloads the ring's spritesheet as a zip so it can be checked.
-$("sheetTest").onclick = async () => {
-  const { image, json } = await buildRingSheet("ff-test");
-  saveBlob("ff-test-spritesheet.zip", makeZip([
-    { name: "ff-test.webp", data: new Uint8Array(await image.arrayBuffer()) },
-    { name: "ff-test.json", data: new TextEncoder().encode(JSON.stringify(json, null, 2)) },
-  ]));
+// Upload as Dynamic Ring (GMs inside Foundry). A name that matches an uploaded ring asks before replacing it.
+function ringUpReset() {
+  const go = $("ringUpGo"), st = $("ringUpStatus");
+  go.textContent = "Upload"; go.dataset.armed = ""; st.textContent = ""; st.className = "hint info send-status";
+}
+$("ringUp").onclick = () => { $("ringUpName").value = ringRec?.name ?? ""; ringUpReset(); $("ringUpDlg").hidden = false; $("ringUpName").focus(); };
+$("ringUpName").oninput = ringUpReset;
+$("ringUpCancel").onclick = () => ($("ringUpDlg").hidden = true);
+$("ringUpGo").onclick = async () => {
+  const name = $("ringUpName").value.trim(), go = $("ringUpGo"), st = $("ringUpStatus");
+  if (!name) { st.textContent = "Give the ring a name."; return; }
+  const id = host.ringId(name), old = host.ringLabel(id);
+  if (old && go.dataset.armed !== "1") {
+    go.dataset.armed = "1"; go.textContent = "Replace";
+    st.textContent = `A ring named "${old}" already exists. Click Replace to overwrite it.`; return;
+  }
+  go.disabled = $("ringUpCancel").disabled = true;
+  try {
+    st.textContent = "Building the spritesheet...";
+    const { image, json } = await buildRingSheet(id);
+    st.textContent = "Uploading...";
+    await host.uploadRing({ name, image, json });
+    $("ringUpDlg").hidden = true;
+    toast(`Uploaded ${name}. It appears in Foundry's Dynamic Token Rings setting after a reload.`);
+  } catch (err) {
+    st.textContent = "Couldn't upload: " + (err?.message || err); st.className = "hint info send-status err";
+  } finally { go.disabled = $("ringUpCancel").disabled = false; }
 };
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -1806,6 +1841,7 @@ async function foundryRing(id) {
 function attachHost(h, actorId) {
   host = h;
   $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
+  $("ringUp").hidden = !host.uploadRing;
   const sel = $("actorSel");
   for (const a of host.actors()) sel.add(new Option(a.name, a.id));
   setActor(actorId || "");

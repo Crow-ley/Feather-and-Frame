@@ -10,6 +10,7 @@ Hooks.once("init", () => {
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
   reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/actors" });
   reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/actors/portraits" });
+  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
@@ -74,6 +75,22 @@ async function upload(file, folder) {
   let path = res?.path ?? `${folder}/${file.name}`;
   // Version tag so cached textures aren't reused and repeat sends still count as a change.
   return path.replace(/\?.*$/, "") + "?v=" + Date.now().toString(36);
+}
+
+// Dynamic rings uploaded from the tool. The id comes from the name, so names that differ only in
+// capitals, spaces or marks share an id, and uploading under that name again replaces the ring.
+const ringId = (name) => "ff-" + (String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ring");
+async function uploadRing({ name, image, json }) {
+  if (!game.user.isGM) throw new Error("only a GM can upload dynamic rings");
+  const id = ringId(name), folder = game.settings.get(ID, "ringFolder");
+  const img = await upload(new File([image], `${id}.webp`, { type: "image/webp" }), folder);
+  // The sheet names its image relative to itself; the version tag makes a replaced image load fresh.
+  json.meta.image = img.split("/").pop();
+  const sheet = await upload(new File([JSON.stringify(json)], `${id}.json`, { type: "application/json" }), folder);
+  const rings = [...game.settings.get(ID, "rings")], entry = { id, label: name, spritesheet: sheet };
+  const i = rings.findIndex((r) => r?.id === id);
+  if (i < 0) rings.push(entry); else rings[i] = entry;
+  await game.settings.set(ID, "rings", rings);
 }
 
 // Dynamic ring
@@ -344,6 +361,9 @@ class FeatherFrameApp extends ApplicationV2 {
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
       ring: (id) => ringImage(getActor(id)),
+      ringId: (name) => ringId(name),
+      ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
+      uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
     };
   }
 
