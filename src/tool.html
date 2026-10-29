@@ -375,8 +375,9 @@ header p { flex: 0 1 auto; }
           <label class="btn" for="backFile">Upload Background...</label>
           <input id="backFile" type="file" accept="image/*" hidden>
           <button class="btn" id="backClear" hidden>No Background</button>
+          <button class="btn" id="backLib">Saved Backgrounds...</button>
         </div>
-        <p class="hint">Fills the circle behind the character. It follows the ring size.</p>
+        <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
         <div class="group" id="backSizeRow" hidden style="gap:6px">
           <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
           <input type="range" id="backScale" min="50" max="200" step="1" value="100">
@@ -465,7 +466,7 @@ header p { flex: 0 1 auto; }
     <div class="lib-head">
       <h2 id="libTitle">Saved rings</h2>
       <div class="row">
-        <label class="btn" for="ringFile">Upload a ring...</label>
+        <label class="btn" for="ringFile" id="libUpload">Upload a ring...</label>
         <button class="btn" id="libClose">Close</button>
       </div>
     </div>
@@ -505,9 +506,9 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100 };
+let prefs = { bakeRing: false, quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100, backId: null };
 let ringCustom = false, ringPix = null, ringFrame = null;
-let back = null, backUrl = null;
+let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
 function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
@@ -527,19 +528,21 @@ const RingDB = {
   open() {
     if (this.db) return Promise.resolve(this.db);
     return new Promise((res, rej) => {
-      let rq; try { rq = indexedDB.open("ccs-rings", 1); } catch (e) { return rej(e); }
-      rq.onupgradeneeded = () => rq.result.createObjectStore("rings", { keyPath: "id" });
+      let rq; try { rq = indexedDB.open("ccs-rings", 2); } catch (e) { return rej(e); }
+      rq.onupgradeneeded = () => {
+        for (const name of ["rings", "backs"]) if (!rq.result.objectStoreNames.contains(name)) rq.result.createObjectStore(name, { keyPath: "id" });
+      };
       rq.onsuccess = () => res((this.db = rq.result)); rq.onerror = () => rej(rq.error);
     });
   },
-  async tx(mode, fn) {
+  async tx(mode, fn, store = "rings") {
     const db = await this.open();
-    return new Promise((res, rej) => { const t = db.transaction("rings", mode), st = t.objectStore("rings"); const r = fn(st); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
+    return new Promise((res, rej) => { const t = db.transaction(store, mode), st = t.objectStore(store); const r = fn(st); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); });
   },
-  all() { return this.tx("readonly", (s) => s.getAll()).then((a) => (a || []).sort((x, y) => x.added - y.added)); },
-  get(id) { return this.tx("readonly", (s) => s.get(id)); },
-  put(r) { return this.tx("readwrite", (s) => s.put(r)); },
-  del(id) { return this.tx("readwrite", (s) => s.delete(id)); },
+  all(store) { return this.tx("readonly", (s) => s.getAll(), store).then((a) => (a || []).sort((x, y) => x.added - y.added)); },
+  get(id, store) { return this.tx("readonly", (s) => s.get(id), store); },
+  put(r, store) { return this.tx("readwrite", (s) => s.put(r), store); },
+  del(id, store) { return this.tx("readwrite", (s) => s.delete(id), store); },
 };
 let ringRec = null, ringUrl = null;
 function applyRingSettings() {
@@ -563,40 +566,52 @@ function rememberRingSettings() {
   ringRec.scale = prefs.ringScale; ringRec.front = prefs.ringFront;
   clearTimeout(ringSaveT); ringSaveT = setTimeout(() => RingDB.put(ringRec).catch(() => {}), 300);
 }
+// The library window shows rings or backgrounds, depending on which button opened it.
+let libMode = "rings";
+const LIB = {
+  rings: { title: "Saved rings", upload: "Upload a ring...", input: "ringFile", what: "ring",
+    empty: "No saved rings yet. Every ring you upload is saved here with its size and front/behind setting." },
+  backs: { title: "Saved backgrounds", upload: "Upload a background...", input: "backFile", what: "background",
+    empty: "No saved backgrounds yet. Every background you upload is saved here with its size." },
+};
+function openLib(mode) { libMode = mode; $("lib").hidden = false; renderLib(); }
 async function renderLib() {
   if ($("lib").hidden) return;
-  let rings = [];
-  try { rings = await RingDB.all(); } catch (e) { toast("This browser can't store rings, so they won't be saved between sessions.", true); }
+  const L = LIB[libMode], inUse = libMode === "rings" ? ringRec : backRec, use = libMode === "rings" ? useRing : useBack;
+  $("libTitle").textContent = L.title; $("libUpload").textContent = L.upload; $("libUpload").htmlFor = L.input; $("libEmpty").textContent = L.empty;
+  let recs = [];
+  try { recs = await RingDB.all(libMode); } catch (e) { toast(`This browser can't store ${L.what}s, so they won't be saved between sessions.`, true); }
   const grid = $("libGrid"); grid.replaceChildren();
   const card = (name, url, current, rec) => {
     const c = document.createElement("div"); c.className = "lib-card"; c.setAttribute("aria-current", current);
-    const pic = document.createElement("button"); pic.className = "pic"; pic.style.backgroundImage = `url("${url}")`;
-    pic.title = "Use this ring"; pic.setAttribute("aria-label", "Use " + name);
-    pic.onclick = () => { useRing(rec); $("lib").hidden = true; toast("Using " + name); };
+    const pic = document.createElement("button"); pic.className = "pic"; if (url) pic.style.backgroundImage = `url("${url}")`;
+    pic.title = "Use this " + L.what; pic.setAttribute("aria-label", "Use " + name);
+    pic.onclick = () => { use(rec); $("lib").hidden = true; toast("Using " + name); };
     c.append(pic);
     if (rec) {
-      const nm = document.createElement("input"); nm.type = "text"; nm.value = rec.name; nm.setAttribute("aria-label", "Ring name");
-      nm.onchange = () => { rec.name = nm.value.trim() || rec.name; RingDB.put(rec).catch(() => {}); };
+      const nm = document.createElement("input"); nm.type = "text"; nm.value = rec.name; nm.setAttribute("aria-label", L.what + " name");
+      nm.onchange = () => { rec.name = nm.value.trim() || rec.name; RingDB.put(rec, libMode).catch(() => {}); };
       const row = document.createElement("div"); row.className = "row";
-      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
+      const btn = document.createElement("button"); btn.className = "btn"; btn.textContent = current ? "In use" : "Use"; btn.onclick = pic.onclick;
       const del = document.createElement("button"); del.className = "btn"; del.textContent = "Remove";
       del.onclick = async () => {
         if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirm remove"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Remove"; }, 3000); return; }
-        await RingDB.del(rec.id).catch(() => {}); URL.revokeObjectURL(url);
-        if (ringRec?.id === rec.id) useRing(null); else renderLib();
+        await RingDB.del(rec.id, libMode).catch(() => {}); URL.revokeObjectURL(url);
+        if (inUse?.id === rec.id) use(null); else renderLib();
         toast("Removed " + rec.name);
       };
-      row.append(use, del); c.append(nm, row);
+      row.append(btn, del); c.append(nm, row);
     } else {
       const lbl = document.createElement("div"); lbl.textContent = name; lbl.style.fontSize = ".9rem";
-      const use = document.createElement("button"); use.className = "btn"; use.textContent = current ? "In use" : "Use"; use.onclick = pic.onclick;
-      const row = document.createElement("div"); row.className = "row"; row.append(lbl, use); c.append(row);
+      const btn = document.createElement("button"); btn.className = "btn"; btn.textContent = current ? "In use" : "Use"; btn.onclick = pic.onclick;
+      const row = document.createElement("div"); row.className = "row"; row.append(lbl, btn); c.append(row);
     }
     grid.append(c);
   };
-  card(host ? "Foundry ring" : "Default ring", defaultRing, !ringRec, null);
-  for (const r of rings) card(r.name, URL.createObjectURL(r.blob), ringRec?.id === r.id, r);
-  $("libEmpty").hidden = rings.length > 0;
+  if (libMode === "rings") card(host ? "Foundry ring" : "Default ring", defaultRing, !ringRec, null);
+  else card("No background", null, !backRec, null);
+  for (const r of recs) card(r.name, URL.createObjectURL(r.blob), inUse?.id === r.id, r);
+  $("libEmpty").hidden = recs.length > 0;
 }
 async function addRingFile(f) {
   const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, front: false, added: Date.now() };
@@ -630,9 +645,28 @@ function setBack(file) {
   if (!file) { draw(); return; }
   const im = new Image(); backUrl = URL.createObjectURL(file);
   im.onload = () => { back = im; $("backClear").hidden = $("backSizeRow").hidden = false; draw(); };
-  im.onerror = () => { toast("Couldn't read that background image.", true); setBack(null); };
+  im.onerror = () => { toast("Couldn't read that background image.", true); useBack(null); };
   im.src = backUrl;
 }
+function useBack(rec) {
+  backRec = rec || null; prefs.backId = rec?.id ?? null;
+  if (rec) { prefs.backScale = rec.scale ?? 100; $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%"; }
+  setBack(rec?.blob ?? null); savePrefs(); renderLib();
+}
+let backSaveT = 0;
+function rememberBackSettings() {
+  if (!backRec) return;
+  backRec.scale = prefs.backScale;
+  clearTimeout(backSaveT); backSaveT = setTimeout(() => RingDB.put(backRec, "backs").catch(() => {}), 300);
+}
+async function addBackFile(f) {
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, added: Date.now() };
+  try { await RingDB.put(rec, "backs"); } catch (e) { toast("Background loaded, but this browser can't save it for next time.", true); }
+  useBack(rec);
+}
+(async () => {
+  try { const rec = prefs.backId && (await RingDB.get(prefs.backId, "backs")); if (rec) useBack(rec); } catch (e) { /* storage unavailable */ }
+})();
 /* Sized like the ring image, since ring backgrounds come padded to match their ring. Clipped to the inner circle. */
 function drawBack(x, T) {
   if (!back) return;
@@ -1315,10 +1349,14 @@ $("ringFile").onchange = (e) => {
   addRingFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your rings"));
 };
 $("ringReset").onclick = () => useRing(null);
-$("backFile").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) setBack(f); };
-$("backClear").onclick = () => setBack(null);
-$("backScale").oninput = (e) => { prefs.backScale = +e.target.value; $("backScaleVal").textContent = prefs.backScale + "%"; savePrefs(); draw(); };
-$("ringLib").onclick = () => { $("lib").hidden = false; renderLib(); };
+$("backFile").onchange = (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  addBackFile(f).then(() => toast("Saved " + f.name.replace(/\.[^.]+$/, "") + " to your backgrounds"));
+};
+$("backClear").onclick = () => useBack(null);
+$("backScale").oninput = (e) => { prefs.backScale = +e.target.value; $("backScaleVal").textContent = prefs.backScale + "%"; savePrefs(); rememberBackSettings(); draw(); };
+$("ringLib").onclick = () => openLib("rings");
+$("backLib").onclick = () => openLib("backs");
 $("libClose").onclick = () => { $("lib").hidden = true; };
 $("lib").addEventListener("click", (e) => { if (e.target === $("lib")) $("lib").hidden = true; });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("lib").hidden) { $("lib").hidden = true; e.stopImmediatePropagation(); } }, true);
