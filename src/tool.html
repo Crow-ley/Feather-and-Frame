@@ -632,8 +632,40 @@ async function renderLib() {
   for (const r of recs) card(r.name, URL.createObjectURL(r.blob), inUse?.id === r.id, r);
   $("libEmpty").hidden = recs.length > 0;
 }
+/* Fits a newly uploaded ring by looking outward from the image's center along 360 lines.
+   The inner edge is the middle of where those lines first hit the ring, so gaps and inward spikes
+   don't throw it off. Ring size puts that edge on the image circle (radius 342) and the tint starts
+   there; the tint ends just past the farthest solid pixel. Returns null when the center is filled
+   or too few lines hit anything, and the ring comes in at 100%. */
+async function fitRing(file) {
+  let bmp; try { bmp = await createImageBitmap(file); } catch (e) { return null; }
+  const W = bmp.width, H = bmp.height, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(bmp, 0, 0); bmp.close();
+  const d = x.getImageData(0, 0, W, H).data, cx = W / 2, cy = H / 2, half = W / 2;
+  const solid = (px, py) => d[(py * W + px) * 4 + 3] > 128;
+  if (solid(Math.floor(cx), Math.floor(cy))) return null;
+  const inner = []; let outer = 0;
+  for (let a = 0; a < 360; a++) {
+    const dx = Math.cos((a * Math.PI) / 180), dy = Math.sin((a * Math.PI) / 180);
+    let first = 0;
+    for (let r = 1; ; r++) {
+      const px = Math.round(cx + dx * r), py = Math.round(cy + dy * r);
+      if (px < 0 || py < 0 || px >= W || py >= H) break;
+      if (solid(px, py)) { first ||= r; outer = Math.max(outer, r); }
+    }
+    if (first) inner.push(first);
+  }
+  if (inner.length < 180) return null;
+  inner.sort((p, q) => p - q);
+  const f = inner[inner.length >> 1] / half, step = (v) => Math.min(142, Math.max(50, Math.round(v * 2) / 2));
+  // A custom ring is drawn 793 px wide at 100%, so its inner edge sits at f * 793 / 2 px.
+  return { scale: Math.min(160, Math.max(50, Math.round(68400 / (793 * f)))),
+    tint: { ...TINT, tintStart: step(f * 100), tintEnd: step((outer / half) * 100 + 1) } };
+}
 async function addRingFile(f) {
-  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, added: Date.now() };
+  const fit = await fitRing(f);
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f,
+    scale: fit?.scale ?? 100, ...(fit && { tint: fit.tint }), added: Date.now() };
   try { await RingDB.put(rec); } catch (e) { toast("Ring loaded, but this browser can't save it for next time.", true); }
   useRing(rec);
 }
