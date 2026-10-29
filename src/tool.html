@@ -385,8 +385,6 @@ header p { flex: 0 1 auto; }
         <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
         <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
         <p class="hint">Lines a custom ring up with the image circle.</p>
-        <label class="check"><input type="checkbox" id="ringFront"> Bring Ring to Front</label>
-        <p class="hint">Draws the ring over the image instead of behind it.</p>
         <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
         <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
         <label class="check"><input type="checkbox" id="showGhost" checked> Show Cropped Image</label>
@@ -470,7 +468,7 @@ header p { flex: 0 1 auto; }
       </div>
     </div>
     <div class="lib-grid" id="libGrid"></div>
-    <p class="lib-empty" id="libEmpty">No saved rings yet. Every ring you upload is saved here with its size and front/behind setting.</p>
+    <p class="lib-empty" id="libEmpty">No saved rings yet. Every ring you upload is saved here with its size.</p>
   </div>
 </div>
 
@@ -505,14 +503,14 @@ const tmpC = document.createElement("canvas"), tctx = tmpC.getContext("2d");
 const DPR = () => window.devicePixelRatio || 1;
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 const maskC = document.createElement("canvas"), mctx = maskC.getContext("2d");
-let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringFront: false, ringId: null, ringCut: true, backScale: 100, backId: null };
+let prefs = { quality: "0.9", ring: true, ghost: true, box: true, ringScale: 100, ringId: null, ringCut: true, backScale: 100, backId: null };
 let ringCustom = false, ringPix = null, ringFrame = null;
 let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
-delete prefs.bakeRing; // setting from before baking was automatic
+delete prefs.bakeRing; delete prefs.ringFront; // settings that no longer exist
 function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
-$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront; $("ringCut").checked = prefs.ringCut;
+$("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringCut").checked = prefs.ringCut;
 $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
@@ -546,16 +544,16 @@ const RingDB = {
 };
 let ringRec = null, ringUrl = null;
 function applyRingSettings() {
-  $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringFront").checked = prefs.ringFront;
+  $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%";
 }
 function useRing(rec) {
   ringRec = rec || null;
   if (ringUrl) { URL.revokeObjectURL(ringUrl); ringUrl = null; }
   if (rec) {
-    prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100; prefs.ringFront = rec.front ?? true;
+    prefs.ringId = rec.id; prefs.ringScale = rec.scale ?? 100;
     ringUrl = URL.createObjectURL(rec.blob); loadRing(ringUrl, true);
   } else {
-    prefs.ringId = null; prefs.ringScale = 100; prefs.ringFront = false; loadRing(defaultRing, false);
+    prefs.ringId = null; prefs.ringScale = 100; loadRing(defaultRing, false);
   }
   prefs.ring = true; $("showRing").checked = true;
   applyRingSettings(); savePrefs(); renderLib();
@@ -563,14 +561,14 @@ function useRing(rec) {
 let ringSaveT = 0;
 function rememberRingSettings() {
   if (!ringRec) return;
-  ringRec.scale = prefs.ringScale; ringRec.front = prefs.ringFront;
+  ringRec.scale = prefs.ringScale;
   clearTimeout(ringSaveT); ringSaveT = setTimeout(() => RingDB.put(ringRec).catch(() => {}), 300);
 }
 // The library window shows rings or backgrounds, depending on which button opened it.
 let libMode = "rings";
 const LIB = {
   rings: { title: "Saved rings", upload: "Upload a ring...", input: "ringFile", what: "ring",
-    empty: "No saved rings yet. Every ring you upload is saved here with its size and front/behind setting." },
+    empty: "No saved rings yet. Every ring you upload is saved here with its size." },
   backs: { title: "Saved backgrounds", upload: "Upload a background...", input: "backFile", what: "background",
     empty: "No saved backgrounds yet. Every background you upload is saved here with its size." },
 };
@@ -614,7 +612,7 @@ async function renderLib() {
   $("libEmpty").hidden = recs.length > 0;
 }
 async function addRingFile(f) {
-  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, front: false, added: Date.now() };
+  const rec = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), blob: f, scale: 100, added: Date.now() };
   try { await RingDB.put(rec); } catch (e) { toast("Ring loaded, but this browser can't save it for next time.", true); }
   useRing(rec);
 }
@@ -630,7 +628,7 @@ function ringPixels() {
   const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(ring, 0, 0);
   return (ringPix = { d: x.getImageData(0, 0, W, H).data, W, H });
 }
-/* Frame-only copy of a ring with an opaque center, used when the ring is drawn in front. */
+/* Frame-only copy of a ring with an opaque center, used for Inner Ring Overhang. */
 function makeFrame(im) {
   const { d, W, H } = ringPixels();
   if (d[((H >> 1) * W + (W >> 1)) * 4 + 3] <= 60) return null;
@@ -681,7 +679,7 @@ function ringRect(T) {
   return [T.cx - rs / 2, T.cy - rh / 2, rs, rh];
 }
 
-const innerOverhang = () => prefs.ringCut && ringCustom && !prefs.ringFront;
+const innerOverhang = () => prefs.ringCut && ringCustom;
 /* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
 const overC = document.createElement("canvas"), octx = overC.getContext("2d");
 const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
@@ -1023,7 +1021,7 @@ function drawNow() {
   drawCompare(T);
   if (prefs.ghost) { vctx.globalAlpha = 0.18; vctx.drawImage(cur.img, cur.ox, cur.oy, cur.w * cur.s, cur.h * cur.s); vctx.globalAlpha = 1; }
   const ringOn = prefs.ring && ring.complete && ring.naturalWidth;
-  if (ringOn && (!prefs.ringFront || ringFrame)) vctx.drawImage(ring, ...ringRect(T));
+  if (ringOn) vctx.drawImage(ring, ...ringRect(T));
   drawBack(vctx, T);
   // Token layer
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.clearRect(0, 0, comp.width, comp.height);
@@ -1033,7 +1031,6 @@ function drawNow() {
   toCam(mctx); drawMaskShapes(mctx, cur);
   cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskC, 0, 0); cctx.globalCompositeOperation = "source-over";
   vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.drawImage(comp, 0, 0); toCam(vctx);
-  if (ringOn && prefs.ringFront) drawRingOver(vctx, cur, ringFrame || ring, false);
   if (ringOn && innerOverhang()) drawRingOver(vctx, cur, ringFrame || ring, true);
   if (!prefs.ring) { vctx.strokeStyle = "rgba(201,164,106,.7)"; vctx.lineWidth = 2 / S * DPR(); vctx.beginPath(); vctx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); vctx.stroke(); }
   if (prefs.box) drawBox(T);
@@ -1341,7 +1338,6 @@ $("zoom").oninput = (e) => {
 $("zoom").onchange = () => { zoomRec = false; persistSoon(); };
 $("showRing").onchange = (e) => { prefs.ring = e.target.checked; savePrefs(); draw(); };
 $("ringScale").oninput = (e) => { prefs.ringScale = +e.target.value; $("ringScaleVal").textContent = prefs.ringScale + "%"; savePrefs(); rememberRingSettings(); draw(); };
-$("ringFront").onchange = (e) => { prefs.ringFront = e.target.checked; savePrefs(); rememberRingSettings(); draw(); };
 $("ringCut").onchange = (e) => { prefs.ringCut = e.target.checked; savePrefs(); draw(); };
 $("ringFile").onchange = (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -1498,11 +1494,10 @@ function composeToken(it, size, withRing) {
     const x = out.getContext("2d"), k = size / 1024, [rx, ry, rw, rh] = ringRect(TPL[it.tpl]);
     x.imageSmoothingQuality = "high";
     const ringLayer = (img) => x.drawImage(img, rx * k, ry * k, rw * k, rh * k);
-    if (!prefs.ringFront || ringFrame) ringLayer(ring);
+    ringLayer(ring);
     x.setTransform(k, 0, 0, k, 0, 0); drawBack(x, TPL[it.tpl]); x.setTransform(1, 0, 0, 1, 0, 0);
     x.drawImage(c, 0, 0);
     x.setTransform(k, 0, 0, k, 0, 0);
-    if (prefs.ringFront) drawRingOver(x, it, ringFrame || ring, false);
     if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
     x.setTransform(1, 0, 0, 1, 0, 0);
     c = out;
@@ -1571,7 +1566,7 @@ const objId = (o) => (o ? objIds.get(o) ?? (objIds.set(o, ++objN), objN) : 0);
 function sigOf(it) {
   const last = it.strokes[it.strokes.length - 1];
   return [it.id, it.s, it.ox, it.oy, it.tpl, JSON.stringify(it.keep), it.strokes.length, last?.pts?.length ?? 0, objId(it.img),
-    prefs.ringFront, prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame), objId(back), prefs.backScale].join("|");
+    prefs.ringScale, prefs.ringCut, objId(ring), objId(ringFrame), objId(back), prefs.backScale].join("|");
 }
 function cmpCanvas(it) {
   const sig = sigOf(it) + "|" + prefs.ring, hit = cmpCache.get(it.id);
