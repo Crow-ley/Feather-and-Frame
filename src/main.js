@@ -23,6 +23,20 @@ Hooks.once("init", () => {
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
   // Rings uploaded from the tool, each { id, label, spritesheet }.
   game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
+  // An uploaded ring waiting to become the world's ring on the next load (see the ready hook below).
+  game.settings.register(ID, "applyRing", { scope: "world", config: false, type: String, default: "" });
+});
+
+/* Apply & Reload. A new ring can't be the world's ring until Foundry has registered it, which only
+   happens while loading. So the ring's id is kept in applyRing, the page reloads, and once loaded
+   the first GM sets Foundry's Dynamic Token Rings setting to it and reloads again to draw it. */
+Hooks.once("ready", async () => {
+  const id = game.user.isGM && game.settings.get(ID, "applyRing");
+  if (!id) return;
+  await game.settings.set(ID, "applyRing", "");
+  if (!CONFIG.Token.ring.configIDs.includes(id)) return ui.notifications.warn(`${TITLE}: the uploaded ring couldn't be found, so the world's ring wasn't changed.`);
+  await game.settings.set("core", "dynamicTokenRing", id);
+  foundry.utils.debouncedReload();
 });
 
 /* Ring shader for uploaded rings. It is Foundry's own shader with one line changed: inside the
@@ -387,6 +401,7 @@ class FeatherFrameApp extends ApplicationV2 {
       ringId: (name) => ringId(name),
       ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
+      applyRing: async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); },
     };
   }
 

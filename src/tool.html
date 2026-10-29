@@ -1452,15 +1452,27 @@ function setTint(e) {
 for (const id of ["tintOn", "tintStart", "tintEnd", "tintColor"]) $(id).addEventListener("input", setTint);
 for (const ev of ["pointerenter", "pointerleave", "focusin", "focusout"]) $("tintRow").addEventListener(ev, () => draw());
 // Upload as Dynamic Ring (GMs inside Foundry). A name that matches an uploaded ring asks before replacing it.
+// After uploading, the dialog offers Apply & Reload (make it the world's ring now) or Save to Options.
+let ringUpDone = null; // id of the ring just uploaded, while those two choices are shown
 function ringUpReset() {
   const go = $("ringUpGo"), st = $("ringUpStatus");
   go.textContent = "Upload"; go.dataset.armed = ""; st.textContent = ""; st.className = "hint info send-status";
+  ringUpDone = null; $("ringUpName").disabled = false; $("ringUpCancel").textContent = "Cancel";
 }
 $("ringUp").onclick = () => { $("ringUpName").value = ringRec?.name ?? ""; ringUpReset(); $("ringUpDlg").hidden = false; $("ringUpName").focus(); };
 $("ringUpName").oninput = ringUpReset;
-$("ringUpCancel").onclick = () => ($("ringUpDlg").hidden = true);
+$("ringUpCancel").onclick = () => {
+  if (ringUpDone) toast(`${$("ringUpName").value.trim()} will be in Foundry's Dynamic Token Rings setting after the next reload.`);
+  $("ringUpDlg").hidden = true;
+};
 $("ringUpGo").onclick = async () => {
   const name = $("ringUpName").value.trim(), go = $("ringUpGo"), st = $("ringUpStatus");
+  if (ringUpDone) {
+    go.disabled = $("ringUpCancel").disabled = true; st.textContent = "Reloading...";
+    try { await persistNow(); await host.applyRing(ringUpDone); }
+    catch (err) { st.textContent = "Couldn't apply: " + (err?.message || err); st.className = "hint info send-status err"; go.disabled = $("ringUpCancel").disabled = false; }
+    return;
+  }
   if (!name) { st.textContent = "Give the ring a name."; return; }
   const id = host.ringId(name), old = host.ringLabel(id);
   if (old && go.dataset.armed !== "1") {
@@ -1473,8 +1485,10 @@ $("ringUpGo").onclick = async () => {
     const { image, json } = await buildRingSheet(id);
     st.textContent = "Uploading...";
     await host.uploadRing({ name, image, json });
-    $("ringUpDlg").hidden = true;
-    toast(`Uploaded ${name}. It appears in Foundry's Dynamic Token Rings setting after a reload.`);
+    ringUpDone = id; $("ringUpName").disabled = true;
+    go.textContent = "Apply & Reload"; $("ringUpCancel").textContent = "Save to Options";
+    st.textContent = `Uploaded ${name}. Apply & Reload makes it the world's ring now; the page reloads twice. Save to Options adds it to Foundry's Dynamic Token Rings list to pick later.`
+      + (items.length && listMode() !== "keep" ? " Reloading clears your token list unless it's set to Keep Until Removed." : "");
   } catch (err) {
     st.textContent = "Couldn't upload: " + (err?.message || err); st.className = "hint info send-status err";
   } finally { go.disabled = $("ringUpCancel").disabled = false; }
