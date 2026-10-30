@@ -185,6 +185,12 @@ function ringSheetPath() {
   return path || rc?.spritesheet || null;
 }
 
+// Waits for an image to load. Used instead of img.decode(), which can wait forever while the page
+// isn't being drawn (a minimized Foundry window, for instance).
+const imageLoaded = (img) => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise((res, rej) => {
+  img.addEventListener("load", () => res(), { once: true });
+  img.addEventListener("error", () => rej(new Error(`couldn't load ${img.src}`)), { once: true });
+}));
 const ringSheets = new Map();
 function loadRingSheet(path) {
   if (!path) return Promise.resolve(null);
@@ -196,7 +202,7 @@ function loadRingSheet(path) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = routeOf(path.replace(/[^/]*$/, "") + json.meta.image);
-    await img.decode();
+    await imageLoaded(img);
     return { img, frames: json.frames, config: json.config ?? {} };
   })();
   ringSheets.set(path, load);

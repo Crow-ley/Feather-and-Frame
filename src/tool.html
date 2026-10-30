@@ -551,6 +551,12 @@ const TPL = {
   big:      { cx: 512, cy: 511, r: 171, topk: 0.55, ring: 0.5, box: [256, 256, 512] },
 };
 const $ = (id) => document.getElementById(id);
+// Waits for an image to load. Used instead of img.decode(), which can wait forever while the page
+// isn't being drawn (a minimized window, or the hidden copy in background mode).
+const loaded = (img) => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise((res, rej) => {
+  img.addEventListener("load", () => res(), { once: true });
+  img.addEventListener("error", () => rej(new Error("the image didn't load")), { once: true });
+}));
 const view = $("view"), vctx = view.getContext("2d"), stage = $("stage");
 let ring = new Image(); ring.src = defaultRing; ring.onload = () => draw();
 let items = [], cur = null, mode = "move", brush = 60, pointer = null, dirHandle = null;
@@ -857,7 +863,7 @@ async function addFiles(list) {
   for (const f of files) {
     try {
       const url = URL.createObjectURL(f);
-      const img = new Image(); img.src = url; await img.decode();
+      const img = new Image(); img.src = url; await loaded(img);
       const it = { id: Math.random().toString(36).slice(2), name: f.name, file: f, outName: cleanName(f.name), img, w: img.naturalWidth, h: img.naturalHeight,
         tpl: "standard", keep: { tl: true, tr: true, bl: false, br: false }, strokes: [], s: 1, ox: 0, oy: 0, saved: false };
       it.small = alphaSample(img);
@@ -879,7 +885,7 @@ function sourcePixels(it) {
 /* Replace the source image with an edited copy of the same size. */
 async function applyEditedImage(it, canvas, label) {
   const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
-  const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
+  const img = new Image(); img.src = URL.createObjectURL(blob); await loaded(img);
   (it.bgUndo ??= []).push({ img: it.img, file: it.file });
   it.origFile ??= it.file;
   it.img = img; it.file = new File([blob], it.name.replace(/\.[^.]+$/, "") + ".png", { type: "image/png" });
@@ -977,7 +983,7 @@ async function serialize(it) {
   return snap;
 }
 async function restore(snap) {
-  const img = new Image(); img.src = URL.createObjectURL(snap.file); await img.decode();
+  const img = new Image(); img.src = URL.createObjectURL(snap.file); await loaded(img);
   const strokes = await Promise.all((snap.strokes || []).map(async (st) => {
     if (!st.clip || st.clip.canvas) return st;
     const bm = await createImageBitmap(st.clip.png); const c = document.createElement("canvas"); c.width = c.height = SEL;
@@ -2021,7 +2027,7 @@ async function foundryRing(id) {
   try { [url, only] = await Promise.all([host.ring(id), host.ringOnly?.(id)]); } catch (e) { console.warn("Feather & Frame | ring", e); }
   if (!url || n !== ringAsk) return;
   let im = null;
-  if (only) { im = new Image(); im.src = only; try { await im.decode(); } catch (e) { im = null; } }
+  if (only) { im = new Image(); im.src = only; try { await loaded(im); } catch (e) { im = null; } }
   if (n !== ringAsk) return;
   defaultRing = url; defaultRingOnly = im;
   if (!ringRec) loadRing(url, false);
@@ -2250,7 +2256,7 @@ async function rebuildToken(text, ringSrc, cut) {
   if (!BACKGROUND) throw new Error("rebuildToken only runs in background mode");
   host ??= { bakeRings: () => false };   // composeToken only cuts inside Foundry, which this is
   if (bgRingSrc !== ringSrc) {
-    const im = new Image(); im.src = ringSrc; await im.decode();
+    const im = new Image(); im.src = ringSrc; await loaded(im);
     ring = im; ringCustom = false; ringBase = 1024; ringPix = null; ringFrame = makeFrame(im); bgRingSrc = ringSrc;
   }
   prefs.ringScale = 100; prefs.ringCut = !!cut; back = null;
