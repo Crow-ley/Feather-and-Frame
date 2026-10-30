@@ -10,7 +10,7 @@ Hooks.once("init", () => {
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
   reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder, with a folder per actor for its token, portrait and saved edits.", type: String, default: "tokens/actors" });
   reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
-  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Each world saves into its own subfolder.", type: String, default: "tokens/ring-spritesheets" });
+  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Every world on this server that uses the same folder shares its rings.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
@@ -19,8 +19,10 @@ Hooks.once("init", () => {
   game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
-  // Rings uploaded from the tool, each { id, label, spritesheet }.
+  // This world's copy of the shared ring list, each { id, label, spritesheet } (see "Shared ring list").
   game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
+  // Whether this world's own rings have been added to the shared list yet (done once).
+  game.settings.register(ID, "ringsShared", { scope: "world", config: false, type: Boolean, default: false });
   // An uploaded ring waiting to become the world's ring on the next load (see the ready hook below).
   game.settings.register(ID, "applyRing", { scope: "world", config: false, type: String, default: "" });
 });
@@ -94,25 +96,70 @@ async function upload(file, folder) {
 const ringId = (name) => "ff-" + (String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ring");
 async function uploadRing({ name, image, json }) {
   if (!game.user.isGM) throw new Error("only a GM can upload dynamic rings");
-  const id = ringId(name), folder = worldFolder("ringFolder");
+  const id = ringId(name), folder = ringFolder();
   const img = await upload(new File([image], `${id}.webp`, { type: "image/webp" }), folder);
   // The sheet names its image relative to itself; the version tag makes a replaced image load fresh.
   json.meta.image = img.split("/").pop();
   const sheet = await upload(new File([JSON.stringify(json)], `${id}.json`, { type: "application/json" }), folder);
-  const rings = [...game.settings.get(ID, "rings")], entry = { id, label: name, spritesheet: sheet };
+  const rings = [...((await readSharedRings()) ?? game.settings.get(ID, "rings"))], entry = { id, label: name, spritesheet: sheet };
   const i = rings.findIndex((r) => r?.id === id);
   if (i < 0) rings.push(entry); else rings[i] = entry;
-  await game.settings.set(ID, "rings", rings);
+  await writeSharedRings(rings);
 }
-// Takes an uploaded ring off Foundry's list. Its files stay, since Foundry gives modules no way to
-// delete files; uploading under the same name later just writes over them. If it was the world's
-// ring, the world goes back to Foundry's Steel ring so it never points at a ring that isn't there.
+// Takes an uploaded ring off the shared list, for every world. Its files stay, since Foundry gives
+// modules no way to delete files; uploading under the same name later just writes over them. If it was
+// this world's ring, the world goes back to Foundry's Steel ring so it never points at a ring that
+// isn't there; other worlds using it fall back to Steel on their next load.
 async function removeRing(id) {
   if (!game.user.isGM) throw new Error("only a GM can remove dynamic rings");
-  await game.settings.set(ID, "rings", game.settings.get(ID, "rings").filter((r) => r?.id !== id));
+  await writeSharedRings(((await readSharedRings()) ?? game.settings.get(ID, "rings")).filter((r) => r?.id !== id));
   if (game.settings.get(ID, "applyRing") === id) await game.settings.set(ID, "applyRing", "");
   if (game.settings.get("core", "dynamicTokenRing") === id) await game.settings.set("core", "dynamicTokenRing", "coreSteel");
 }
+
+// Shared ring list
+// Uploaded rings are shared by every world on the server: their spritesheets sit in one folder,
+// listed in rings.json beside them. Foundry registers rings while a world loads and can't wait for a
+// file then, so each world registers from its own copy in the "rings" setting, and a GM's client
+// brings that copy up to date on load. Only GMs read the file (it needs the file browser permission).
+const ringFolder = () => cleanFolder(game.settings.get(ID, "ringFolder"));
+const validRings = (list) => (Array.isArray(list) ? list.filter((r) => r?.id && r.label && r.spritesheet) : []);
+/* The shared list, or null when there is no rings.json yet. */
+async function readSharedRings() {
+  let files = [];
+  try { files = (await FP().browse(fileSource(), ringFolder()))?.files ?? []; } catch (e) { return null; }
+  const file = files.find((f) => f.replace(/\?.*$/, "").split("/").pop() === "rings.json");
+  if (!file) return null;
+  const res = await fetch(`${routeOf(file.replace(/\?.*$/, ""))}?v=${Date.now().toString(36)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`rings.json: ${res.status}`);
+  return validRings(await res.json());
+}
+/* Writes the shared list and this world's copy of it. */
+async function writeSharedRings(list) {
+  await upload(new File([JSON.stringify(list, null, 1)], "rings.json", { type: "application/json" }), ringFolder());
+  await game.settings.set(ID, "rings", list);
+}
+/* On a GM's load: the first time, this world's own rings are added to the shared list (or start it).
+   After that the shared list wins, so a ring added, replaced or removed in another world shows up here. */
+Hooks.once("ready", async () => {
+  if (!game.user.isGM) return;
+  try {
+    const own = validRings(game.settings.get(ID, "rings"));
+    let shared = await readSharedRings();
+    if (!game.settings.get(ID, "ringsShared")) {
+      const merged = [...(shared ?? [])];
+      for (const r of own) if (!merged.some((m) => m.id === r.id)) merged.push(r);
+      if (shared === null || merged.length !== shared.length) await writeSharedRings(merged);
+      await game.settings.set(ID, "ringsShared", true);
+      shared = merged;
+    }
+    // A missing file never empties a world's rings: it is written again from this world's copy.
+    if (shared === null) return own.length ? writeSharedRings(own) : undefined;
+    if (JSON.stringify(shared) === JSON.stringify(own)) return;
+    await game.settings.set(ID, "rings", shared);
+    ui.notifications.info(`${TITLE}: dynamic rings changed in another world. Reload to see them.`);
+  } catch (e) { console.warn(`${TITLE} | shared rings`, e); }
+});
 
 // Dynamic ring
 // The module ships no ring art. It reads the spritesheet of the ring this actor's token uses and
@@ -381,7 +428,8 @@ class FeatherFrameApp extends ApplicationV2 {
       bakeRings: () => game.settings.get(ID, "bakeRings"),
       searchLimit: () => game.settings.get(ID, "searchLimit"),
       ringId: (name) => ringId(name),
-      ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
+      // Checked against the shared list, so a ring made in another world counts too.
+      ringLabel: async (id) => ((await readSharedRings().catch(() => null)) ?? game.settings.get(ID, "rings")).find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
       applyRing: game.user.isGM ? async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); } : null,
       uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,

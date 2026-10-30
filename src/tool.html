@@ -508,7 +508,7 @@ header p { flex: 0 1 auto; }
   <div class="lib-box send-box">
     <div class="lib-head"><h2 id="upListTitle">Remove Dynamic Rings</h2></div>
     <div class="send-body">
-      <p class="hint">Removing a ring takes it off Foundry's Dynamic Token Rings list after the next reload. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
+      <p class="hint">Rings are shared by every world on this server. Removing one takes it off Foundry's Dynamic Token Rings list in every world after their next reload; a world using it goes back to Foundry's Steel ring. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
       <div class="group" id="upListRows" style="gap:8px"></div>
       <p class="hint info" id="upListEmpty">No rings uploaded yet.</p>
     </div>
@@ -1529,7 +1529,7 @@ $("ringUpGo").onclick = async () => {
     return;
   }
   if (!name) { st.textContent = "Give the ring a name."; return; }
-  const id = host.ringId(name), old = host.ringLabel(id);
+  const id = host.ringId(name), old = await host.ringLabel(id);
   if (old && go.dataset.armed !== "1") {
     go.dataset.armed = "1"; go.textContent = "Replace";
     st.textContent = `A ring named "${old}" already exists. Click Replace to overwrite it.`; return;
