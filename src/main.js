@@ -14,7 +14,10 @@ Hooks.once("init", () => {
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
-  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
+  // Off by default when Tokenizer is also installed and active, so the two don't both claim the click.
+  const tokenizer = ["vtta-tokenizer", "tokenizer-2"].some((m) => game.modules.get(m)?.active);
+  reg("portraitClick", { name: "Portrait click opens Feather & Frame", hint: "Clicking an actor's portrait while its sheet is in edit mode opens Feather & Frame for that actor. Hold Shift while clicking to get Foundry's file picker instead. Sheets that have no edit mode open Feather & Frame on every portrait click.", type: Boolean, default: !tokenizer });
+  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or click its portrait. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
   reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
@@ -1249,6 +1252,27 @@ Hooks.on("renderActorDirectory", (dir, html) => {
   if (!canUse()) return;
   target.append(b);
 });
+
+// Portrait click
+// Clicking an actor's editable portrait opens the tool instead of Foundry's file picker. Systems mark
+// that portrait with Foundry's own data-edit="img" (and sheets with an edit mode leave it off in play
+// mode), so one listener on the whole page covers every system without touching any sheet. It runs in
+// the capture phase, before the sheet's own click handler opens the file picker.
+/* The actor whose sheet holds an element, for both kinds of Foundry window. */
+function sheetActor(el) {
+  const v2 = el.closest(".application");
+  const app = v2 ? foundry.applications.instances.get(v2.id) : ui.windows[el.closest(".app")?.dataset.appid];
+  const actor = app?.document ?? app?.actor;
+  return actor instanceof Actor ? actor : null;
+}
+Hooks.once("ready", () => document.addEventListener("click", (event) => {
+  if (event.shiftKey || !game.settings.get(ID, "portraitClick")) return;
+  const img = event.target.closest?.('img[data-edit="img"], video[data-edit="img"]');
+  const actor = img && sheetActor(img);
+  if (!actor || !canUse(actor)) return;   // anyone not allowed the tool gets the file picker as usual
+  event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+  openApp(actor);
+}, true));
 
 // Actor context menu
 const contextEntry = {
