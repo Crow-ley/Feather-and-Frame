@@ -403,8 +403,8 @@ header p { flex: 0 1 auto; }
           <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
           <p class="hint">Lines a custom ring up with the image circle.</p>
         </div>
-        <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
-        <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
+        <label class="check" id="ringCutRow"><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
+        <p class="hint" id="ringCutHint">Parts of the ring that reach inward sit over the image, except where Restore or an overhang region keeps it.</p>
         <div class="group" id="tintRow" hidden style="gap:6px">
           <label class="check"><input type="checkbox" id="tintOn" checked> Ring Tint</label>
           <p class="hint">The part of the ring Foundry recolors for ring colors, damage flashes and pulses. Hover here to see where it starts and ends.</p>
@@ -808,11 +808,12 @@ function drawTintBand(T) {
   vctx.restore();
 }
 
-const innerOverhang = () => prefs.ringCut && baking();
-/* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
+const innerOverhang = () => prefs.ringCut;
+/* Draws the ring over the image, except where the image is kept by overhang regions or Restore.
+   With cut set, that same shape is cut out of the image instead (see composeToken). */
 const overC = document.createElement("canvas"), octx = overC.getContext("2d");
 const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
-function drawRingOver(x, it, img, circleOnly) {
+function drawRingOver(x, it, img, circleOnly, cut = false) {
   const T = TPL[it.tpl], tf = x.getTransform(), W = x.canvas.width, H = x.canvas.height;
   for (const c of [overC, prioC]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "source-over"; octx.clearRect(0, 0, W, H);
@@ -828,7 +829,7 @@ function drawRingOver(x, it, img, circleOnly) {
   pctx.globalCompositeOperation = "source-over";
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "destination-out"; octx.drawImage(prioC, 0, 0);
   octx.globalCompositeOperation = "source-over";
-  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(overC, 0, 0); x.restore();
+  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); if (cut) x.globalCompositeOperation = "destination-out"; x.drawImage(overC, 0, 0); x.restore();
 }
 
 function toast(msg, err) {
@@ -1695,9 +1696,8 @@ let downloads = null;
 const bakeAll = () => !!host?.bakeRings?.();
 const baking = () => ringCustom || bakeAll();
 function bakedRing() { return baking() && !!ring.naturalWidth; }
-// Inner Ring Overhang only applies to a baked ring, so it shows only then.
 function bakeNote() {
-  $("bakeInfo").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = !baking();
+  $("bakeInfo").hidden = !baking();
   $("bakeInfo").textContent = backOn() ? "The ring and background are saved into the token image."
     : ringCustom ? "The custom ring is saved into the token image." : "Dynamic rings are turned off, so the ring is saved into the token image.";
 }
@@ -1716,6 +1716,12 @@ function composeToken(it, size, withRing) {
     if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
     x.setTransform(1, 0, 0, 1, 0, 0);
     c = out;
+  } else if (!withRing && host && ring.naturalWidth && innerOverhang()) {
+    // Dynamic ring: Foundry draws its ring behind the token image, so the ring's inner parts are cut
+    // out of the image. The live ring shows through the holes with its tint and effects. Only inside
+    // Foundry, where the tool's ring is the world's real ring; the standalone page's ring is a stand-in.
+    const x = c.getContext("2d"), k = size / 1024;
+    x.setTransform(k, 0, 0, k, 0, 0); drawRingOver(x, it, ringFrame || ring, true, true); x.setTransform(1, 0, 0, 1, 0, 0);
   }
   return c;
 }
