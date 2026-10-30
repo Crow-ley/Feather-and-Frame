@@ -1119,7 +1119,8 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", 
 // this world's actor folder for an actor from another world. One actor at a time, so Foundry stays usable.
 const stripV = (p) => String(p ?? "").replace(/\?.*$/, "");
 const baseName = (p) => stripV(p).split("/").pop();
-const isActiveGM = () => game.user.isGM && game.users.activeGM === game.user;
+// Right after a world loads Foundry may not have worked out the active GM yet; a GM alone counts then.
+const isActiveGM = () => game.user.isGM && (game.users.activeGM ?? game.user) === game.user;
 
 /* Whether an actor's dynamic token was cut for another ring, or in another world. */
 function needsRecut(actor, sheet) {
@@ -1236,7 +1237,7 @@ async function recutTokens(actors) {
 let recutQueue = Promise.resolve();
 const queueRecut = (actors) => { recutQueue = recutQueue.then(() => recutTokens(actors)).catch((e) => console.warn(`${TITLE} | token update`, e)); };
 // On load (after the other start-up work), and when an actor is created or imported.
-Hooks.once("ready", () => { if (isActiveGM()) setTimeout(() => queueRecut(game.actors.contents), 3000); });
+Hooks.once("ready", () => setTimeout(() => { if (isActiveGM()) queueRecut(game.actors.contents); }, 3000));
 Hooks.on("createActor", (actor) => { if (isActiveGM() && !actor.pack) queueRecut([actor]); });
 
 // Map preview upkeep
