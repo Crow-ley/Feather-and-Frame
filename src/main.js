@@ -14,7 +14,7 @@ Hooks.once("init", () => {
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
-  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or use the crow on its sheet. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
+  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
   reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
@@ -1268,109 +1268,4 @@ contextEntry.onClick = (event, li) => contextEntry.callback(li ?? event?.current
 Hooks.on("getActorContextOptions", (app, options) => { options.push(contextEntry); });
 Hooks.on("getActorDirectoryEntryContext", (app, options) => { options.push(contextEntry); });
 
-// Actor sheet header control
-Hooks.on("getHeaderControlsApplicationV2", (sheet, controls) => {
-  const doc = sheet.document;
-  if (!(doc instanceof Actor) || !doc.isOwner || !canUse(doc)) return;
-  controls.push({ icon: "fa-solid fa-crow", label: "Conjure Token", action: "ccsConjure", onClick: () => openApp(doc) });
-  try { sheet.options.actions ??= {}; sheet.options.actions.ccsConjure ??= () => openApp(doc); } catch (e) { /* ignore */ }
-});
-/* Sheets built on Foundry's older Application V1 (PF2e and Shadowdark use these) don't run the
-   hook above. They ask for their title-bar buttons through this one instead. */
-Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
-  const doc = sheet.actor ?? sheet.document;
-  if (!(doc instanceof Actor) || !doc.isOwner || !canUse(doc)) return;
-  buttons.unshift({ label: "Conjure Token", class: "ccs-conjure", icon: "fa-solid fa-crow", onclick: () => openApp(doc) });
-});
-
-/* Portrait button on dnd5e sheets (edit mode only). */
-function addPortraitBar(sheet, html) {
-  const actor = sheet.document ?? sheet.actor;
-  if (!(actor instanceof Actor) || !canUse(actor)) return;
-  const root = html instanceof HTMLElement ? html : html?.[0] ?? sheet.element;
-  if (!root) return;
-  root.querySelectorAll(".ccs-portrait-bar").forEach((b) => b.remove());
-  const MODES = sheet.constructor?.MODES;
-  const editing = MODES && "_mode" in sheet ? sheet._mode === MODES.EDIT : sheet.isEditable;
-  if (!editing) return;
-  const img = root.querySelector('.portrait img, img.portrait, [data-action="showArtwork"] img, img[data-edit="img"]');
-  const box = img?.closest(".portrait") ?? img?.parentElement;
-  if (!box) return;
-  if (getComputedStyle(box).position === "static") box.style.position = "relative";
-
-  const bar = document.createElement("button");
-  bar.type = "button"; bar.className = "ccs-portrait-bar ccs-at-bottom";
-  bar.innerHTML = `<i class="fa-solid fa-crow"></i><span>Conjure Token</span>`;
-  bar.setAttribute("data-tooltip", "Open Feather & Frame for this actor");
-  bar.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openApp(actor); });
-  box.append(bar);
-}
-
-// Tidy 5e
-const tidyWatched = new WeakSet();
-function findTidyPortrait(root, actor) {
-  const imgs = [...root.querySelectorAll("img")].filter((i) => {
-    const src = i.getAttribute("src") || "";
-    return actor.img && (src === actor.img || decodeURI(i.src).endsWith(actor.img));
-  });
-  if (!imgs.length) return null;
-  imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
-  return imgs[0];
-}
-function findTidyGear(img) {
-  let anc = img.parentElement;
-  for (let i = 0; i < 4 && anc; i++, anc = anc.parentElement) {
-    const icon = anc.querySelector("i.fa-gear, i.fa-cog, i.fa-gears");
-    const btn = icon?.closest("button, a, [role=button]");
-    if (btn) return btn;
-  }
-  return null;
-}
-function placeTidyCrow(root, actor) {
-  const img = findTidyPortrait(root, actor);
-  const gear = img && findTidyGear(img);
-  let crow = root.querySelector(".ccs-portrait-bar");
-  if (!gear || !gear.offsetParent) { crow?.remove(); return; }  // gear is only visible in edit mode
-  const host = img.parentElement;
-  if (!crow || crow.parentElement !== host) {
-    crow?.remove();
-    crow = document.createElement("button");
-    crow.type = "button"; crow.className = "ccs-portrait-bar";
-    crow.innerHTML = `<i class="fa-solid fa-crow"></i><span>Conjure Token</span>`;
-    crow.setAttribute("data-tooltip", "Open Feather & Frame for this actor");
-    crow.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openApp(actor); });
-    host.append(crow);
-  }
-
-  if (getComputedStyle(host).position === "static") host.style.position = "relative";
-  const hr = host.getBoundingClientRect(), ir = img.getBoundingClientRect();
-  const sx = host.offsetWidth ? hr.width / host.offsetWidth : 1, sy = host.offsetHeight ? hr.height / host.offsetHeight : 1;
-  crow.style.left = `${((ir.left + ir.right) / 2 - hr.left) / sx - host.clientLeft}px`;
-  crow.style.top = `${((ir.top + ir.bottom) / 2 - hr.top) / sy - host.clientTop}px`;
-}
-function addTidyCrow(sheet, root, actor) {
-  placeTidyCrow(root, actor);
-  if (tidyWatched.has(root)) return;
-  tidyWatched.add(root);
-  let queued = false;
-  new MutationObserver((muts) => {
-    if (muts.every((m) => m.target.closest?.(".ccs-portrait-bar"))) return;
-    if (queued) return; queued = true;
-    requestAnimationFrame(() => { queued = false; if (root.isConnected) placeTidyCrow(root, sheet.document ?? actor); });
-  }).observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "src", "style", "hidden"] });
-  new ResizeObserver(() => { if (root.isConnected) placeTidyCrow(root, sheet.document ?? actor); }).observe(root);
-}
-function onSheetRender(sheet, html) {
-  const actor = sheet.document ?? sheet.actor;
-  if (!(actor instanceof Actor) || !canUse(actor)) return;
-  const root = html instanceof HTMLElement ? html : html?.[0] ?? sheet.element;
-  if (!root) return;
-  const tidy = root.classList?.contains("tidy5e-sheet") || root.closest?.(".tidy5e-sheet") || root.querySelector?.(".tidy5e-sheet")
-    || /tidy/i.test(sheet.constructor?.name ?? "");
-  if (tidy) return addTidyCrow(sheet, sheet.element ?? root, actor);
-  addPortraitBar(sheet, html);
-}
-Hooks.on("renderActorSheetV2", onSheetRender);
-Hooks.on("renderActorSheet", onSheetRender);
-Hooks.on("tidy5e-sheet.renderActorSheet", onSheetRender);
 

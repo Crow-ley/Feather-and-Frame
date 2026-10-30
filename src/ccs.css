@@ -1,22 +1,3 @@
 .ccs-app .window-content { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .ccs-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .ccs-frame { flex: 1; width: 100%; border: 0; min-height: 0; background: #141117; }
-
-.ccs-portrait-bar { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
-  display: flex; flex-direction: column; align-items: center; gap: 6px; width: auto; height: auto; margin: 0; padding: 14px 18px 10px;
-  border: 0; border-radius: 12px; background: rgba(10, 10, 14, .55); box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
-  color: #e6dfd2; cursor: pointer; opacity: .85; transition: opacity .15s, background .15s; line-height: 1.2; }
-.ccs-portrait-bar i { font-size: 46px; color: #c9a46a; text-shadow: 0 2px 6px rgba(0, 0, 0, .6); }
-.ccs-portrait-bar span { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
-.ccs-portrait-bar:hover, .ccs-portrait-bar:focus-visible { opacity: 1; background: rgba(10, 10, 14, .78); }
-@media (prefers-reduced-motion: reduce) { .ccs-portrait-bar { transition: none; } }
-
-/* Override sheet button styles (Tidy 5e). */
-.application .ccs-portrait-bar, .tidy5e-sheet .ccs-portrait-bar { display: flex !important; flex-direction: column !important; align-items: center !important; gap: 6px !important;
-  width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-width: none !important;
-  padding: 14px 18px 10px !important; margin: 0 !important; border: 0 !important; border-radius: 12px !important; line-height: 1.2 !important; }
-.application .ccs-portrait-bar i, .tidy5e-sheet .ccs-portrait-bar i { font-size: 46px !important; width: auto !important; height: auto !important; line-height: 1 !important; color: #c9a46a !important; margin: 0 !important; }
-.application .ccs-portrait-bar span, .tidy5e-sheet .ccs-portrait-bar span { font-size: 12px !important; font-weight: 700 !important; letter-spacing: .1em !important; text-transform: uppercase !important; color: #e6dfd2 !important; }
-
-/* dnd5e: bottom of the portrait, above the HP shield */
-.application .ccs-portrait-bar.ccs-at-bottom { top: auto !important; bottom: 40px !important; transform: translateX(-50%) !important; }
