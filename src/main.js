@@ -10,6 +10,7 @@ Hooks.once("init", () => {
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
   reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/actors" });
   reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/actors/portraits" });
+  reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
   reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
@@ -403,6 +404,7 @@ class FeatherFrameApp extends ApplicationV2 {
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
       ring: (id) => ringImage(getActor(id)),
+      bakeRings: () => game.settings.get(ID, "bakeRings"),
       ringId: (name) => ringId(name),
       ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,

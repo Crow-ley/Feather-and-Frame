@@ -575,7 +575,7 @@ $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.ba
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
+    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -804,7 +804,7 @@ function drawTintBand(T) {
   vctx.restore();
 }
 
-const innerOverhang = () => prefs.ringCut && ringCustom;
+const innerOverhang = () => prefs.ringCut && baking();
 /* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
 const overC = document.createElement("canvas"), octx = overC.getContext("2d");
 const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
@@ -1687,10 +1687,15 @@ function makeZip(files) {
 }
 let downloads = null;
 
-function bakedRing() { return !!((ringCustom || back) && ring.naturalWidth); }
+// A saved ring or background is always baked in; Foundry's ring too when the GM turned dynamic rings off.
+const bakeAll = () => !!host?.bakeRings?.();
+const baking = () => !!(ringCustom || back || bakeAll());
+function bakedRing() { return baking() && !!ring.naturalWidth; }
+// Inner Ring Overhang only applies to a baked ring, so it shows only then.
 function bakeNote() {
-  $("bakeInfo").hidden = !(ringCustom || back);
-  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image." : "The custom ring is saved into the token image.";
+  $("bakeInfo").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = !baking();
+  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image."
+    : ringCustom ? "The custom ring is saved into the token image." : "Dynamic rings are turned off, so the ring is saved into the token image.";
 }
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
 function composeToken(it, size, withRing) {
@@ -1984,7 +1989,7 @@ async function foundryRing(id) {
 function attachHost(h, actorId) {
   host = h;
   $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
-  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings;
+  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings; bakeNote();
   const sel = $("actorSel");
   for (const a of host.actors()) sel.add(new Option(a.name, a.id));
   setActor(actorId || "");
