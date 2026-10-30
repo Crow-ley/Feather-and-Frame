@@ -122,16 +122,11 @@ const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.get
 // (like an actor's image) are passed as full addresses.
 const fullUrl = (p) => new URL(routeOf(p), window.location.href).href;
 
-/* The spritesheet for an actor's ring: the ring picked in Foundry's "Dynamic Token Rings" setting.
-   Multiple Rings, when it is active, lets each token pick its own ring and replaces Foundry's
-   active ring with a combined sheet it builds in memory, so its token flag is checked first. */
-function ringSheetPath(actor) {
+/* The spritesheet of the world's ring: the one picked in Foundry's "Dynamic Token Rings" setting. */
+function ringSheetPath() {
   const rc = CONFIG.Token.ring;
   let id = null;
-  if (game.modules.get("multiple-rings")?.active) {
-    id = foundry.utils.getProperty(actor?.prototypeToken ?? {}, "flags.multiple-rings.ringAppearance") || null;
-  }
-  if (!id) { try { id = game.settings.get("core", "dynamicTokenRing"); } catch (e) { id = null; } }
+  try { id = game.settings.get("core", "dynamicTokenRing"); } catch (e) { id = null; }
   let path = null;
   try { path = id ? rc.getConfig(id)?.spritesheet : null; } catch (e) { path = null; }
   return path || rc?.spritesheet || null;
@@ -197,7 +192,7 @@ function ringColour(own, frameColour, sheetColour) {
 // band (or under the "-msk" mask frame, when a sheet has one) the ring colour is multiplied by
 // the art's red channel.
 async function ringImage(actor) {
-  const sheet = await loadRingSheet(ringSheetPath(actor));
+  const sheet = await loadRingSheet(ringSheetPath());
   if (!sheet) return null;
   // Like Foundry, use the ring frame made for this token's grid size (a sheet can draw small and
   // large rings differently). "-bkg" and "-msk" frames are not rings. Ties go to the larger frame.
