@@ -567,6 +567,10 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
 // Sent files are named after the actor, so each send overwrites the last instead of adding files.
 // The id keeps actors with the same name apart; compendium actors also carry their pack.
 const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
+// Compendium actors get a folder of their own. A world actor imported from a compendium keeps the
+// compendium's id, so with a name like "Goblin-dnd5e-monsters" it would otherwise get the same file
+// name as the compendium Goblin, and its sends would overwrite that actor's files.
+const sendFolder = (key, actor) => `${worldFolder(key)}${actor.pack ? "/compendiums" : ""}`;
 
 /* When the portrait is a token's untouched original image, that token's edit file points to the
    uploaded portrait instead of carrying a second copy of the same picture. loadEdits fetches it back. */
@@ -584,7 +588,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
   const base = fileBase(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
-  const folder = worldFolder("tokenFolder");
+  const folder = sendFolder("tokenFolder", actor);
   const n = pkg.tokens.length;
 
   // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
@@ -629,7 +633,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), worldFolder("portraitFolder"));
+    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), sendFolder("portraitFolder", actor));
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
