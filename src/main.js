@@ -8,21 +8,27 @@ const TITLE = "Feather & Frame";
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
-  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/actors" });
-  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/actors/portraits" });
-  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
+  // Foundry lists settings in the order they're registered: folders, then rings, then how the tool
+  // opens, and the scale values at the bottom.
+  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder, with a folder per actor for its token, portrait and saved edits.", type: String, default: "tokens/actors" });
+  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Every world on this server that uses the same folder shares its rings.", type: String, default: "tokens/ring-spritesheets" });
+  reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
+  reg("hiResRings", { name: "High res for 3x3 and 4x4 rings", hint: "Rings created while this is on include a sharper version for tokens 3 squares and bigger. It only affects rings created after it's changed, and uses about four times the graphics memory on every player's computer while that ring is the world's ring.", type: Boolean, default: false });
+  // Off by default when Tokenizer is also installed and active, so the two don't both claim the click.
+  const tokenizer = ["vtta-tokenizer", "tokenizer-2"].some((m) => game.modules.get(m)?.active);
+  reg("portraitClick", { name: "Portrait click opens Feather & Frame", hint: "Clicking an actor's portrait while its sheet is in edit mode opens Feather & Frame for that actor. Hold Shift while clicking to get Foundry's file picker instead. Sheets that have no edit mode open Feather & Frame on every portrait click.", type: Boolean, default: !tokenizer });
+  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or click its portrait. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
+  game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
-  reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
-  reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or use the crow on its sheet. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
-  reg("checkUpdates", { name: "Check GitHub for updates", hint: "Once per session, when a GM opens the window, ask GitHub whether a newer version is out. This sends one request to api.github.com and nothing else.", type: Boolean, default: true });
-  reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
+  reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
-  game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
-  game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
-  // Rings uploaded from the tool, each { id, label, spritesheet }.
+  // This world's copy of the shared ring list, each { id, label, spritesheet } (see "Shared ring list").
   game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
+  // Whether this world's own rings have been added to the shared list yet (done once).
+  game.settings.register(ID, "ringsShared", { scope: "world", config: false, type: Boolean, default: false });
   // An uploaded ring waiting to become the world's ring on the next load (see the ready hook below).
   game.settings.register(ID, "applyRing", { scope: "world", config: false, type: String, default: "" });
 });
@@ -39,36 +45,14 @@ Hooks.once("ready", async () => {
   foundry.utils.debouncedReload();
 });
 
-/* Ring shader for uploaded rings. It is Foundry's own shader with one line changed: inside the
-   image circle the ring is drawn over the token image, so a ring's inner overhang stays in front
-   of the character. Outside the circle the character stays on top, as in Foundry. The circle is
-   at 0.668 of the frame's half-width (342 of 512 px), where the tool puts every ring's inner edge.
-   If Foundry's shader no longer has the line, the rings use Foundry's shader and lose the overhang. */
-const RING_BLEND = "vec4 blendedResult = blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);";
-const OVERHANG_BLEND = `vec4 blendedResult = (dist < 0.668)
-      ? blend(ringColor * rectangularMask, blend(processedColor, backgroundColor * rectangularMask))
-      : blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);`;
-function overhangShader() {
-  const Base = foundry.canvas.rendering.shaders.TokenRingSamplerShader;
-  const frag = Base._batchFragmentShader;
-  if (typeof frag !== "string" || !frag.includes(RING_BLEND)) {
-    console.warn(`${TITLE} | Foundry's ring shader has changed, so uploaded rings are drawn without inner overhang.`);
-    return null;
-  }
-  return class FeatherFrameRingShader extends Base {
-    static classPluginName = "featherFrameRingBatch";
-    static _batchFragmentShader = frag.replace(RING_BLEND, OVERHANG_BLEND);
-  };
-}
-
 // Uploaded rings join Foundry's ring list. Foundry only takes new rings during this hook,
-// so a ring added later appears after a reload.
+// so a ring added later appears after a reload. They use Foundry's own ring shader; a ring's
+// inner overhang is cut out of each token image instead (see composeToken in the tool).
 Hooks.once("initializeDynamicTokenRingConfig", (ringConfig) => {
   const RingData = foundry.canvas.placeables.tokens.DynamicRingData;
-  const shaderClass = overhangShader(), framework = shaderClass ? { framework: { shaderClass } } : {};
   for (const r of game.settings.get(ID, "rings")) {
     if (!r?.id) continue;
-    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet, ...framework })); }
+    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet })); }
     catch (e) { console.warn(`${TITLE} | Couldn't add ring "${r.label}"`, e); }
   }
 });
@@ -80,6 +64,9 @@ const cleanFolder = (f) => String(f || "").trim().replace(/\\/g, "/").replace(/^
 // File names keep letters, digits and a few marks; ".." and leading dots can't survive, so a name
 // can never climb out of its folder.
 const safeName = (n) => String(n || "token").replace(/[^\w\-. ()']+/g, "_").replace(/\.{2,}/g, ".").replace(/^[._ ]+|[._ ]+$/g, "") || "token";
+// A folder setting plus this world's own subfolder. Worlds on one server (and actors shared
+// through compendiums) then never overwrite each other's files.
+const worldFolder = (key) => `${cleanFolder(game.settings.get(ID, key))}/${safeName(game.world.id)}`;
 // A folder below the token folder, made only of the marks safeName keeps and with no "." or ".."
 // parts. Folders read from actor flags must pass this: an actor's owner can write those flags.
 function inTokenFolder(f) {
@@ -115,25 +102,70 @@ async function upload(file, folder) {
 const ringId = (name) => "ff-" + (String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ring");
 async function uploadRing({ name, image, json }) {
   if (!game.user.isGM) throw new Error("only a GM can upload dynamic rings");
-  const id = ringId(name), folder = game.settings.get(ID, "ringFolder");
+  const id = ringId(name), folder = ringFolder();
   const img = await upload(new File([image], `${id}.webp`, { type: "image/webp" }), folder);
   // The sheet names its image relative to itself; the version tag makes a replaced image load fresh.
   json.meta.image = img.split("/").pop();
   const sheet = await upload(new File([JSON.stringify(json)], `${id}.json`, { type: "application/json" }), folder);
-  const rings = [...game.settings.get(ID, "rings")], entry = { id, label: name, spritesheet: sheet };
+  const rings = [...((await readSharedRings()) ?? game.settings.get(ID, "rings"))], entry = { id, label: name, spritesheet: sheet };
   const i = rings.findIndex((r) => r?.id === id);
   if (i < 0) rings.push(entry); else rings[i] = entry;
-  await game.settings.set(ID, "rings", rings);
+  await writeSharedRings(rings);
 }
-// Takes an uploaded ring off Foundry's list. Its files stay, since Foundry gives modules no way to
-// delete files; uploading under the same name later just writes over them. If it was the world's
-// ring, the world goes back to Foundry's Steel ring so it never points at a ring that isn't there.
+// Takes an uploaded ring off the shared list, for every world. Its files stay, since Foundry gives
+// modules no way to delete files; uploading under the same name later just writes over them. If it was
+// this world's ring, the world goes back to Foundry's Steel ring so it never points at a ring that
+// isn't there; other worlds using it fall back to Steel on their next load.
 async function removeRing(id) {
   if (!game.user.isGM) throw new Error("only a GM can remove dynamic rings");
-  await game.settings.set(ID, "rings", game.settings.get(ID, "rings").filter((r) => r?.id !== id));
+  await writeSharedRings(((await readSharedRings()) ?? game.settings.get(ID, "rings")).filter((r) => r?.id !== id));
   if (game.settings.get(ID, "applyRing") === id) await game.settings.set(ID, "applyRing", "");
   if (game.settings.get("core", "dynamicTokenRing") === id) await game.settings.set("core", "dynamicTokenRing", "coreSteel");
 }
+
+// Shared ring list
+// Uploaded rings are shared by every world on the server: their spritesheets sit in one folder,
+// listed in rings.json beside them. Foundry registers rings while a world loads and can't wait for a
+// file then, so each world registers from its own copy in the "rings" setting, and a GM's client
+// brings that copy up to date on load. Only GMs read the file (it needs the file browser permission).
+const ringFolder = () => cleanFolder(game.settings.get(ID, "ringFolder"));
+const validRings = (list) => (Array.isArray(list) ? list.filter((r) => r?.id && r.label && r.spritesheet) : []);
+/* The shared list, or null when there is no rings.json yet. */
+async function readSharedRings() {
+  let files = [];
+  try { files = (await FP().browse(fileSource(), ringFolder()))?.files ?? []; } catch (e) { return null; }
+  const file = files.find((f) => f.replace(/\?.*$/, "").split("/").pop() === "rings.json");
+  if (!file) return null;
+  const res = await fetch(`${routeOf(file.replace(/\?.*$/, ""))}?v=${Date.now().toString(36)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`rings.json: ${res.status}`);
+  return validRings(await res.json());
+}
+/* Writes the shared list and this world's copy of it. */
+async function writeSharedRings(list) {
+  await upload(new File([JSON.stringify(list, null, 1)], "rings.json", { type: "application/json" }), ringFolder());
+  await game.settings.set(ID, "rings", list);
+}
+/* On a GM's load: the first time, this world's own rings are added to the shared list (or start it).
+   After that the shared list wins, so a ring added, replaced or removed in another world shows up here. */
+Hooks.once("ready", async () => {
+  if (!game.user.isGM) return;
+  try {
+    const own = validRings(game.settings.get(ID, "rings"));
+    let shared = await readSharedRings();
+    if (!game.settings.get(ID, "ringsShared")) {
+      const merged = [...(shared ?? [])];
+      for (const r of own) if (!merged.some((m) => m.id === r.id)) merged.push(r);
+      if (shared === null || merged.length !== shared.length) await writeSharedRings(merged);
+      await game.settings.set(ID, "ringsShared", true);
+      shared = merged;
+    }
+    // A missing file never empties a world's rings: it is written again from this world's copy.
+    if (shared === null) return own.length ? writeSharedRings(own) : undefined;
+    if (JSON.stringify(shared) === JSON.stringify(own)) return;
+    await game.settings.set(ID, "rings", shared);
+    ui.notifications.info(`${TITLE}: dynamic rings changed in another world. Reload to see them.`);
+  } catch (e) { console.warn(`${TITLE} | shared rings`, e); }
+});
 
 // Dynamic ring
 // The module ships no ring art. It reads the spritesheet of the ring this actor's token uses and
@@ -143,21 +175,22 @@ const routeOf = (p) => (/^(https?:|data:|blob:)/.test(p) ? p : foundry.utils.get
 // (like an actor's image) are passed as full addresses.
 const fullUrl = (p) => new URL(routeOf(p), window.location.href).href;
 
-/* The spritesheet for an actor's ring: the ring picked in Foundry's "Dynamic Token Rings" setting.
-   Multiple Rings, when it is active, lets each token pick its own ring and replaces Foundry's
-   active ring with a combined sheet it builds in memory, so its token flag is checked first. */
-function ringSheetPath(actor) {
+/* The spritesheet of the world's ring: the one picked in Foundry's "Dynamic Token Rings" setting. */
+function ringSheetPath() {
   const rc = CONFIG.Token.ring;
   let id = null;
-  if (game.modules.get("multiple-rings")?.active) {
-    id = foundry.utils.getProperty(actor?.prototypeToken ?? {}, "flags.multiple-rings.ringAppearance") || null;
-  }
-  if (!id) { try { id = game.settings.get("core", "dynamicTokenRing"); } catch (e) { id = null; } }
+  try { id = game.settings.get("core", "dynamicTokenRing"); } catch (e) { id = null; }
   let path = null;
   try { path = id ? rc.getConfig(id)?.spritesheet : null; } catch (e) { path = null; }
   return path || rc?.spritesheet || null;
 }
 
+// Waits for an image to load. Used instead of img.decode(), which can wait forever while the page
+// isn't being drawn (a minimized Foundry window, for instance).
+const imageLoaded = (img) => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise((res, rej) => {
+  img.addEventListener("load", () => res(), { once: true });
+  img.addEventListener("error", () => rej(new Error(`couldn't load ${img.src}`)), { once: true });
+}));
 const ringSheets = new Map();
 function loadRingSheet(path) {
   if (!path) return Promise.resolve(null);
@@ -169,7 +202,7 @@ function loadRingSheet(path) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = routeOf(path.replace(/[^/]*$/, "") + json.meta.image);
-    await img.decode();
+    await imageLoaded(img);
     return { img, frames: json.frames, config: json.config ?? {} };
   })();
   ringSheets.set(path, load);
@@ -217,8 +250,10 @@ function ringColour(own, frameColour, sheetColour) {
 // Foundry's ring shader: the background is tinted with an overlay blend, and inside the colour
 // band (or under the "-msk" mask frame, when a sheet has one) the ring colour is multiplied by
 // the art's red channel.
-async function ringImage(actor) {
-  const sheet = await loadRingSheet(ringSheetPath(actor));
+// With ringOnly, the background is left out: the tool needs the ring on its own to know which of its
+// parts reach in over the art, since a background fills the whole inside.
+async function ringImage(actor, ringOnly = false) {
+  const sheet = await loadRingSheet(ringSheetPath());
   if (!sheet) return null;
   // Like Foundry, use the ring frame made for this token's grid size (a sheet can draw small and
   // large rings differently). "-bkg" and "-msk" frames are not rings. Ties go to the larger frame.
@@ -238,7 +273,7 @@ async function ringImage(actor) {
 
   const out = new ImageData(size, size), o = out.data;
   const R = framePixels(img, ring, size).data;
-  const B = bkg ? framePixels(img, bkg, size).data : null;
+  const B = bkg && !ringOnly ? framePixels(img, bkg, size).data : null;
   const M = msk ? framePixels(img, msk, size).data : null;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const i = (y * size + x) * 4;
@@ -391,22 +426,28 @@ class FeatherFrameApp extends ApplicationV2 {
         if (a.pack && !packAllowed()) { ui.notifications.warn(PACK_OFF); return null; }
         return canUse(rememberPackActor(a)) ? info(a) : null;
       },
-      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), saveEdits: game.settings.get(ID, "saveEdits") }),
+      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced") }),
       savedEdits: (id) => savedEdits(getActor(id)).length,
       loadEdits: (id) => loadEdits(getActor(id)),
       wildcard: (id) => wildcardSet(getActor(id)),
       needsGM: (wild) => needsApproval(!!wild),
-      savePref: (key, value) => game.settings.set(ID, key, value),
+      // Only the tool's own per-user choices; module and world settings stay in Foundry's settings window.
+      savePref: (key, value) => (["usePortrait", "updatePlaced"].includes(key) ? game.settings.set(ID, key, !!value) : null),
       selected: (id) => { this.actor = getActor(id); },
       send: (opts, progress) => this.send(opts, progress),
       previewStart: (id) => this.previewStart(id),
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
       ring: (id) => ringImage(getActor(id)),
+      ringOnly: (id) => ringImage(getActor(id), true),
+      bakeRings: () => game.settings.get(ID, "bakeRings"),
+      searchLimit: () => game.settings.get(ID, "searchLimit"),
       ringId: (name) => ringId(name),
-      ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
+      // Checked against the shared list, so a ring made in another world counts too.
+      ringLabel: async (id) => ((await readSharedRings().catch(() => null)) ?? game.settings.get(ID, "rings")).find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
-      applyRing: async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); },
+      hiResRings: () => game.settings.get(ID, "hiResRings"),
+      applyRing: game.user.isGM ? async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); } : null,
       uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,
         file: String(r.spritesheet).replace(/\?.*$/, ""), world: r.id === game.settings.get("core", "dynamicTokenRing") })) : null,
       removeRing: (id) => removeRing(id),
@@ -517,7 +558,7 @@ class FeatherFrameApp extends ApplicationV2 {
   /* Send to Actor. The token is rendered here; the uploads and actor changes happen in
      applyPackage, either right away or, for a player without upload permission, on a GM's
      computer after the GM approves. */
-  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, saveEdits = false, portraitFrom = null }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, portraitFrom = null }, progress = () => {}) {
     const tool = this.tool;
     const inPack = String(actorId ?? "").startsWith("Compendium.");
     const actor = inPack ? await freshPackActor(actorId) : getActor(actorId);
@@ -528,7 +569,7 @@ class FeatherFrameApp extends ApplicationV2 {
     if (!tool?.current()) throw new Error("Load an image first.");
     await this.previewStop();
 
-    const pkg = await buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress);
+    const pkg = await buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, portraitFrom }, progress);
     const message = needsApproval(!!pkg.wildcard) ? await requestApproval(pkg, progress) : await applyPackage(actor, pkg, progress);
     for (const item of pkg.items) tool.markSaved?.(item);
     return message;
@@ -544,7 +585,7 @@ function tokenConfig(tpl, baked) {
 }
 
 /* PF2e's "Autoscale" token option sets a token's scale back to 1 (0.8 for small creatures) every
-   time the token is drawn, which would undo a Big Chungus scale of 2. When the scale isn't 1 it
+   time the token is drawn, which would undo an Oversized scale of 2. When the scale isn't 1 it
    is turned off for that token, the same as unticking Autoscale in its Token Config. Other
    systems get nothing extra. prefix is "prototypeToken." for the actor's prototype token. */
 function keepScale(scale, prefix = "") {
@@ -552,11 +593,11 @@ function keepScale(scale, prefix = "") {
 }
 
 /* Everything a send needs, rendered in the tool: the token images, the portrait and the edit files. */
-async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress) {
+async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, portraitFrom }, progress) {
   const it = tool.current();
   const sent = wildcard ? tool.items().filter((i) => wildcard.ids.includes(i.id)) : [it];
   if (wildcard) {
-    if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Big Chungus tokens.");
+    if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Oversized tokens.");
     const existing = wildcard.add ? wildcardSet(actor) : null;
     if (!sent.length || (sent.length < 2 && !existing)) throw new Error("A new wildcard set needs at least two tokens.");
   }
@@ -570,27 +611,44 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
   // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
   const from = (wildcard && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
   const pf = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
-  const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf } : null;
-  let edits = null;
-  if (saveEdits) {
-    progress("Saving edits...");
-    edits = [];
-    for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
-  }
-  return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
+  // A portrait that is the token's own original image is linked from that token's edit (linkPortrait).
+  const link = portraitFile ? null : { id: from.id, field: from.origFile ? "origFile" : "file" };
+  const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf, link } : null;
+  // Every send saves its edits, so the token can be loaded back later and rebuilt for another ring.
+  progress("Saving edits...");
+  const edits = [];
+  for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
+  return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), cut: !!tool.overhang?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
 
-// Sent files are named after the actor, so each send overwrites the last instead of adding files.
-// The id keeps actors with the same name apart; compendium actors also carry their pack.
+// Each actor's files (token, portrait, saved edits, wildcard sets) share one folder named after the
+// actor, so each send overwrites the last instead of adding files. The id keeps actors with the same
+// name apart; compendium actors also carry their pack.
 const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
+const fileName = (actor) => safeName(actor.name || "actor").replace(/\s+/g, "-");
+// Compendium actors' folders go in a folder of their own. A world actor imported from a compendium
+// keeps the compendium's id, so with a name like "Goblin-dnd5e-monsters" it would otherwise get the
+// same folder as the compendium Goblin, and its sends would overwrite that actor's files.
+const actorFolder = (actor) => `${worldFolder("tokenFolder")}${actor.pack ? "/compendiums" : ""}/${fileBase(actor)}`;
+
+/* When the portrait is a token's untouched original image, that token's edit file points to the
+   uploaded portrait instead of carrying a second copy of the same picture. loadEdits fetches it back. */
+function linkPortrait(e, portrait, portraitPath) {
+  const link = portrait?.link;
+  if (!link || !portraitPath || link.id !== e.id) return e.json;
+  const doc = JSON.parse(e.json), f = doc.item?.[link.field];
+  if (!f) return e.json;
+  doc.item[link.field] = { name: f.name, type: f.type, link: portraitPath.replace(/\?.*$/, "") };
+  return JSON.stringify(doc);
+}
 
 /* Upload a package's files and update the actor and its placed tokens. */
 async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
-  const base = fileBase(actor);
+  const name = fileName(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
-  const folder = game.settings.get(ID, "tokenFolder");
+  const folder = actorFolder(actor);
   const n = pkg.tokens.length;
 
   // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
@@ -598,10 +656,10 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (!wildcard) {
     progress("Uploading token...");
     const t = pkg.tokens[0];
-    tokenPath = await upload(new File([t.blob], `${base}.webp`, { type: "image/webp" }), folder);
+    tokenPath = await upload(new File([t.blob], `${name}-token.webp`, { type: "image/webp" }), folder);
   } else {
     const existing = wildcard.add ? wildcardSet(actor) : null;
-    const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
+    const setFolder = existing?.folder ?? `${folder}/set-${Date.now().toString(36)}`;
     const stamp = Date.now().toString(36);
     for (const [i, t] of pkg.tokens.entries()) {
       progress(`Uploading token ${i + 1} of ${n}...`);
@@ -623,6 +681,10 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   // Foundry draws whichever image it picked inside the ring.
   update["prototypeToken.randomImg"] = !!wildPath;
   update[`flags.${ID}.wildcard`] = setInfo;
+  // What the automatic update needs to recut a dynamic token later: the world it was made in, the
+  // world ring's spritesheet (its ?v= tag changes with every upload, so it pins the exact ring shape)
+  // and whether Inner Ring Overhang was on. Baked tokens have their ring in the image, so they get none.
+  update[`flags.${ID}.ring`] = baked ? null : { world: game.world.id, sheet: ringSheetPath(), cut: !!pkg.cut };
   // src is the plain token image: a random set image, the portrait, or the token itself.
   // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
   const tokenUpdate = (src) => ({ ...(baked
@@ -635,21 +697,22 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+    portraitPath = await upload(new File([p.blob], `${name}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), folder);
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
   }
 
-  // Saved edits: one JSON file per token in <token folder>/edits, listed on the actor.
+  // Saved edits: one JSON file per token in the actor's folder, listed on the actor. Each entry also
+  // names the token image made from it, so a recut can overwrite that same file.
   if (pkg.edits) {
-    const editFolder = `${cleanFolder(folder)}/edits`;
     const saved = [];
+    const tokenOf = new Map(pkg.tokens.map((t, i) => [t.id, (wildcard ? setPaths[i] : tokenPath).replace(/\?.*$/, "")]));
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
-      const name = wildcard ? `${safeName(e.name)}-${id}` : base;
-      const path = await upload(new File([e.json], `${name}.json`, { type: "application/json" }), editFolder);
-      saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
+      const file = wildcard ? `${name}-edit-${id}` : `${name}-edit`;
+      const path = await upload(new File([linkPortrait(e, pkg.portrait, portraitPath)], `${file}.json`, { type: "application/json" }), folder);
+      saved.push({ id, name: e.name, path: path.replace(/\?.*$/, ""), token: tokenOf.get(e.id) ?? null });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
     const keep = wildcard?.add ? savedEdits(actor).filter((e) => !saved.some((s) => s.id === e.id)) : [];
@@ -674,7 +737,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   }
 
   ui.notifications.info(`${TITLE}: ${wildPath ? "wildcard set" : "token"} sent to ${actor.name}.`);
-  const parts = [(big ? "Big Chungus" : "Standard") + (baked ? ", ring baked in" : ""), `scale ${scale}`];
+  const parts = [(big ? "Oversized" : "Standard") + (baked ? ", ring baked in" : ""), `scale ${scale}`];
   if (!baked) parts.push(`scale correction ${correction}`);
   if (wildPath) parts.push(`${n} token${n > 1 ? "s" : ""} ${wildcard.add && setInfo.count > n ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
   if (pkg.edits) parts.push("edits saved");
@@ -767,9 +830,9 @@ async function requestApproval(pkg, progress) {
   if (!gm) throw new Error("No GM is online to approve this. Try again when your GM is connected.");
   progress("Packing the token for your GM...");
   const body = {
-    actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
+    actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, cut: pkg.cut, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
     tokens: await Promise.all(pkg.tokens.map(async (t) => ({ id: t.id, name: t.name, data: await blobToData(t.blob) }))),
-    portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, data: await blobToData(pkg.portrait.blob) } : null,
+    portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, link: pkg.portrait.link, data: await blobToData(pkg.portrait.blob) } : null,
     edits: pkg.edits,
   };
   const text = JSON.stringify(body);
@@ -909,9 +972,9 @@ async function handleRequest(reqId, userId, text) {
     if (choice !== "approve") return reply(false, `${game.user.name} declined the token.`);
 
     const pkg = {
-      actorId: actor.id, tpl, baked: !!body.baked, wildcard, updatePlaced: !!body.updatePlaced,
+      actorId: actor.id, tpl, baked: !!body.baked, cut: !!body.cut, wildcard, updatePlaced: !!body.updatePlaced,
       tokens: tokens.map((t, i) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: tokenBlobs[i] })),
-      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob } : null,
+      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob, link: portraitLink(portrait.link) } : null,
       edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,
     };
     const message = await applyPackage(actor, pkg);
@@ -943,19 +1006,40 @@ async function listSet(setFolder, fallback) {
 /* Saved edits listed on an actor, and loading their files back as text for the tool. The list is
    an actor flag its owner can write, so only paths on this server (or the Forge's file store) are
    read, and a file is used only if it is a saved edit whose images are written in as data URLs:
-   the tool turns those into files, and any other address would make it fetch from elsewhere. */
+   the tool turns those into files, and any other address would make it fetch from elsewhere.
+   A link to the portrait is the one exception, and fillLinks swaps it for the image first. */
 function savedEdits(actor) {
   const list = actor?.getFlag?.(ID, "edits");
   return Array.isArray(list) ? list.filter((e) => editPathOk(e?.path)) : [];
 }
-function editPathOk(path) {
+// A path on this server (or the Forge's file store) with no way out of its folder, ending in one of ext.
+function pathOk(path, ext) {
   const p = String(path ?? "");
   if (/^https:/i.test(p)) {
     let u; try { u = new URL(p); } catch (e) { return false; }
-    return fileSource() === "forgevtt" && /(^|\.)forge-vtt\.com$/i.test(u.hostname) && /\.json$/i.test(u.pathname);
+    return fileSource() === "forgevtt" && /(^|\.)forge-vtt\.com$/i.test(u.hostname) && ext.test(u.pathname);
   }
-  if (!/^[\w\-. ()'%/]+\.json$/i.test(p) || p.startsWith("//") || /%2e|%2f|%5c/i.test(p)) return false;
+  if (!/^[\w\-. ()'%/]+$/.test(p) || !ext.test(p) || p.startsWith("//") || /%2e|%2f|%5c/i.test(p)) return false;
   return !p.replace(/^\//, "").split("/").some((s) => !s || s === "." || s === "..");
+}
+const editPathOk = (p) => pathOk(p, /\.json$/i);
+const IMAGE_TYPES = ["png", "jpeg", "webp", "gif", "avif"];
+/* The portrait link a player's request may carry: which of its tokens, and which image of it. */
+const portraitLink = (l) => (l && /^[a-z0-9]+$/i.test(String(l.id)) && ["file", "origFile"].includes(l.field) ? { id: String(l.id), field: l.field } : null);
+/* An edit's image stored as a link to the portrait is fetched and written back in as a data URL,
+   so the tool always gets a self-contained edit. The link must be an image on this server. */
+async function fillLinks(text) {
+  let doc; try { doc = JSON.parse(text); } catch (e) { return text; }
+  for (const key of ["file", "origFile"]) {
+    const f = doc?.item?.[key];
+    if (!f?.link) continue;
+    if (!pathOk(f.link, /\.(png|jpe?g|webp|gif|avif)$/i)) throw new Error("bad portrait link");
+    const res = await fetch(`${routeOf(f.link)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
+    if (!res.ok) throw new Error(res.status);
+    const blob = await checkedImage(await blobToData(await res.blob()), IMAGE_TYPES, "the portrait isn't an image");
+    doc.item[key] = { name: f.name, type: blob.type, data: await blobToData(blob) };
+  }
+  return JSON.stringify(doc);
 }
 const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/]*={0,2}$/;
 function validEdit(json) {
@@ -968,18 +1052,22 @@ function validEdit(json) {
   if (it.strokes != null && !Array.isArray(it.strokes)) return false;
   return (it.strokes ?? []).every((s) => s && typeof s === "object" && (!s.clip || (typeof s.clip.png === "string" && DATA_URL.test(s.clip.png))));
 }
+/* One saved edit's text, with its portrait link filled in, or null if it can't be read. */
+async function readEdit(e) {
+  try {
+    const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
+    if (!res.ok) return null;
+    const text = await fillLinks(await res.text());
+    return validEdit(text) ? text : null;
+  } catch (err) { return null; }
+}
 async function loadEdits(actor) {
   if (!actor || !canUse(actor)) throw new Error("You can't open this actor's edits.");
   const texts = [];
   let missing = 0;
   for (const e of savedEdits(actor)) {
-    try {
-      const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
-      if (!res.ok) throw new Error(res.status);
-      const text = await res.text();
-      if (!validEdit(text)) throw new Error("not a saved edit");
-      texts.push(text);
-    } catch (err) { missing++; }
+    const text = await readEdit(e);
+    if (text) texts.push(text); else missing++;
   }
   return { texts, missing };
 }
@@ -1017,57 +1105,140 @@ function openApp(actor) {
   if (!app) app = new FeatherFrameApp();
   if (actor) app.actor = actor;
   Promise.resolve(app.render({ force: true })).then(() => { if (actor) app.setActor(actor); });
-  checkForUpdate();
   return app;
 }
 
-// Update check
-// The module isn't listed on Foundry's package site yet, so it checks its GitHub releases itself.
-// Runs once per session, for the GM only, the first time the window opens.
-const REPO = "Crow-ley/Feather-and-Frame";
-const MANIFEST = `https://github.com/${REPO}/releases/latest/download/module.json`;
-let updateChecked = false;
+// Text going into a dialog's HTML (the GM approval dialog).
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-async function checkForUpdate() {
-  if (updateChecked || !game.user.isGM || !game.settings.get(ID, "checkUpdates")) return;
-  updateChecked = true;
-  let release;
-  try {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } });
-    if (!res.ok) return;
-    release = await res.json();
-  } catch (e) { return; } // offline or GitHub unreachable: say nothing
-  // Everything from GitHub is checked before use: the tag must be a plain version number
-  // and the link must point into this repository. Both are escaped before they go into HTML.
-  const latest = String(release.tag_name ?? "").replace(/^v/i, "");
-  if (!/^\d+(\.\d+){0,3}$/.test(latest)) return;
-  const installed = game.modules.get(ID)?.version ?? "0";
-  if (!foundry.utils.isNewerVersion(latest, installed)) return;
-  if (game.settings.get(ID, "skipVersion") === latest) return;
-  const fallback = `https://github.com/${REPO}/releases/latest`;
-  const url = String(release.html_url ?? "");
-  const page = url.toLowerCase().startsWith(`https://github.com/${REPO}/releases/`.toLowerCase()) ? url : fallback;
-  const content = `
-    <p>Version <strong>${escapeHtml(latest)}</strong> is out. You have ${escapeHtml(installed)}.</p>
-    <p>To update, go to Foundry's setup screen, open Add-on Modules and click the update button next to ${TITLE}.
-    If that button doesn't appear, uninstall the module and install it again with this manifest URL:</p>
-    <input type="text" readonly value="${escapeHtml(MANIFEST)}" style="width:100%">
-    <p><a href="${escapeHtml(page)}" target="_blank" rel="noopener noreferrer">See what changed on GitHub</a></p>`;
-  const choice = await foundry.applications.api.DialogV2.wait({
-    window: { title: `${TITLE} update available`, icon: "fa-solid fa-feather" },
-    content,
-    buttons: [
-      { action: "copy", label: "Copy manifest URL", icon: "fa-solid fa-copy", default: true },
-      { action: "skip", label: "Skip this version", icon: "fa-solid fa-forward" },
-      { action: "close", label: "Close", icon: "fa-solid fa-xmark" },
-    ],
-    rejectClose: false,
-  }).catch(() => null);
-  if (choice === "copy") {
-    await game.clipboard.copyPlainText(MANIFEST);
-    ui.notifications.info(`${TITLE}: manifest URL copied.`);
-  } else if (choice === "skip") await game.settings.set(ID, "skipVersion", latest);
+
+// Automatic token update
+// A dynamic token has the world ring's inner parts cut out of its image (composeToken in the tool), so
+// its holes only fit the ring it was sent with. When the world's ring changes, or an actor arrives from
+// another world, the active GM's client rebuilds those tokens from their saved edits in a hidden copy of
+// the tool (background mode) and writes them over the old files: the same files within one world, or
+// this world's actor folder for an actor from another world. One actor at a time, so Foundry stays usable.
+const stripV = (p) => String(p ?? "").replace(/\?.*$/, "");
+const baseName = (p) => stripV(p).split("/").pop();
+// Right after a world loads Foundry may not have worked out the active GM yet; a GM alone counts then.
+const isActiveGM = () => game.user.isGM && (game.users.activeGM ?? game.user) === game.user;
+
+/* Whether an actor's dynamic token was cut for another ring, or in another world. */
+function needsRecut(actor, sheet) {
+  const note = actor?.getFlag?.(ID, "ring");
+  return !!note && typeof note === "object" && (note.world !== game.world.id || note.sheet !== sheet);
 }
+/* The saved edits that name the token image made from them (sends from 2.0.0 on). */
+const recutEdits = (actor) => savedEdits(actor).filter((e) => pathOk(e.token, /\.webp$/i));
+/* Why an actor can't be rebuilt, or null if it can. Its token must still be the one the tool sent. */
+function recutProblem(actor) {
+  const edits = recutEdits(actor), tok = actor.prototypeToken, set = actor.getFlag(ID, "wildcard");
+  if (!edits.length) return "no saved edits";
+  if (set ? tok.texture?.src !== set.wild : stripV(tok.ring?.subject?.texture) !== edits[0].token) return "token changed by hand";
+  return null;
+}
+
+/* The hidden copy of the tool, started in background mode. */
+async function backgroundTool() {
+  const frame = document.createElement("iframe");
+  frame.name = "ff-background";
+  frame.style.cssText = "position:fixed;left:-20px;top:-20px;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
+  frame.srcdoc = await loadToolPage();
+  document.body.append(frame);
+  for (let i = 0; i < 150 && !frame.contentWindow?.CCS?.rebuildToken; i++) await new Promise((r) => setTimeout(r, 100));
+  const tool = frame.contentWindow?.CCS;
+  if (!tool?.rebuildToken) { frame.remove(); throw new Error("the background tool didn't start"); }
+  return { tool, close: () => frame.remove() };
+}
+
+/* Rebuilds one actor's tokens for the world's ring, uploads them, and points the actor and its placed
+   tokens at them. A token whose edit can't be read is copied over unchanged when the actor is new here,
+   so a wildcard set stays whole. */
+async function recutActor(actor, tool, sheet) {
+  const note = actor.getFlag(ID, "ring"), set = actor.getFlag(ID, "wildcard"), adopt = note.world !== game.world.id;
+  const ringSrc = await ringImage(actor, true);   // the holes only depend on the ring's own shape
+  if (!ringSrc) throw new Error("the world's ring couldn't be read");
+  const folder = set ? (adopt ? `${actorFolder(actor)}/set-${Date.now().toString(36)}` : stripV(set.folder)) : actorFolder(actor);
+  const done = new Map();   // old token path -> new token path
+  for (const e of recutEdits(actor)) {
+    const text = await readEdit(e);
+    let blob = text ? await tool.rebuildToken(text, ringSrc, note.cut) : null;
+    if (!blob && adopt) blob = await fetch(`${routeOf(e.token)}?v=${Date.now().toString(36)}`).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+    if (!blob) continue;
+    const name = set ? baseName(e.token) : `${fileName(actor)}-token.webp`;
+    done.set(e.token, await upload(new File([blob], name, { type: "image/webp" }), folder));
+  }
+  if (!done.size) throw new Error("its saved edits couldn't be read");
+
+  const tok = actor.prototypeToken, update = {
+    [`flags.${ID}.ring`]: { world: game.world.id, sheet, cut: !!note.cut },
+    [`flags.${ID}.edits`]: savedEdits(actor).map((e) => (done.has(e.token) ? { ...e, token: stripV(done.get(e.token)) } : e)),
+  };
+  if (set) {
+    const wild = `${stripV([...done.values()][0]).replace(/\/[^/]*$/, "")}/*.webp`;
+    update["prototypeToken.texture.src"] = wild;
+    update[`flags.${ID}.wildcard`] = { ...set, folder, wild };
+  } else {
+    const [oldPath, newPath] = [...done][0];
+    update["prototypeToken.ring.subject.texture"] = newPath;
+    if (stripV(tok.texture?.src) === oldPath) update["prototypeToken.texture.src"] = newPath;
+  }
+  await actor.update(update);
+  // Placed tokens: only the ones still showing one of the old images.
+  for (const scene of game.scenes) {
+    const ups = [];
+    for (const t of scene.tokens) {
+      if (t.actorId !== actor.id) continue;
+      const u = { _id: t.id }, sub = done.get(stripV(t.ring?.subject?.texture)), src = done.get(stripV(t.texture?.src));
+      if (sub) u["ring.subject.texture"] = sub;
+      if (src) u["texture.src"] = src;
+      if (sub || src) ups.push(u);
+    }
+    if (ups.length) await scene.updateEmbeddedDocuments("Token", ups);
+  }
+}
+
+/* Finds the actors that need it and rebuilds them, with a notice at the start and the end. Actors that
+   can never be rebuilt (no saved edits, or a token changed by hand) lose their note, so they aren't
+   reported again; ones that failed keep it and are tried again on the next load. */
+async function recutTokens(actors) {
+  const sheet = ringSheetPath();
+  if (!sheet) return;
+  const todo = actors.filter((a) => !a.pack && needsRecut(a, sheet));
+  if (!todo.length) return;
+  const skipped = [], failed = [], ready = [];
+  for (const a of todo) {
+    const why = recutProblem(a);
+    if (!why) { ready.push(a); continue; }
+    skipped.push(`${a.name} (${why})`);
+    await a.update({ [`flags.${ID}.ring`]: null }).catch(() => {});
+  }
+  let updated = 0;
+  if (ready.length) {
+    ui.notifications.info(`${TITLE}: updating ${ready.length} token${ready.length > 1 ? "s" : ""} for the world's ring...`);
+    let bg = null;
+    try {
+      bg = await backgroundTool();
+      for (const a of ready) {
+        try { await recutActor(a, bg.tool, sheet); updated++; }
+        catch (e) { failed.push(`${a.name} (${e?.message ?? e})`); console.warn(`${TITLE} | token update: ${a.name}`, e); }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } catch (e) { failed.push(`all (${e?.message ?? e})`); console.warn(`${TITLE} | token update`, e); }
+    finally { bg?.close(); }
+  }
+  const not = skipped.length + failed.length;
+  if (updated || not) {
+    const msg = `${TITLE}: updated ${updated} token${updated === 1 ? "" : "s"} for the world's ring.` + (not ? ` ${not} couldn't be updated; see the console (F12).` : "");
+    if (not) { ui.notifications.warn(msg); console.warn(`${TITLE} | not updated:\n${[...skipped, ...failed].join("\n")}`); }
+    else ui.notifications.info(msg);
+  }
+}
+// One update at a time; a new request waits for the one running.
+let recutQueue = Promise.resolve();
+const queueRecut = (actors) => { recutQueue = recutQueue.then(() => recutTokens(actors)).catch((e) => console.warn(`${TITLE} | token update`, e)); };
+// On load (after the other start-up work), and when an actor is created or imported.
+Hooks.once("ready", () => setTimeout(() => { if (isActiveGM()) queueRecut(game.actors.contents); }, 3000));
+Hooks.on("createActor", (actor) => { if (isActiveGM() && !actor.pack) queueRecut([actor]); });
 
 // Map preview upkeep
 Hooks.on("refreshToken", (t) => app?.previewRefresh(t));
@@ -1093,6 +1264,27 @@ Hooks.on("renderActorDirectory", (dir, html) => {
   target.append(b);
 });
 
+// Portrait click
+// Clicking an actor's editable portrait opens the tool instead of Foundry's file picker. Systems mark
+// that portrait with Foundry's own data-edit="img" (and sheets with an edit mode leave it off in play
+// mode), so one listener on the whole page covers every system without touching any sheet. It runs in
+// the capture phase, before the sheet's own click handler opens the file picker.
+/* The actor whose sheet holds an element, for both kinds of Foundry window. */
+function sheetActor(el) {
+  const v2 = el.closest(".application");
+  const app = v2 ? foundry.applications.instances.get(v2.id) : ui.windows[el.closest(".app")?.dataset.appid];
+  const actor = app?.document ?? app?.actor;
+  return actor instanceof Actor ? actor : null;
+}
+Hooks.once("ready", () => document.addEventListener("click", (event) => {
+  if (event.shiftKey || !game.settings.get(ID, "portraitClick")) return;
+  const img = event.target.closest?.('img[data-edit="img"], video[data-edit="img"]');
+  const actor = img && sheetActor(img);
+  if (!actor || !canUse(actor)) return;   // anyone not allowed the tool gets the file picker as usual
+  event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+  openApp(actor);
+}, true));
+
 // Actor context menu
 const contextEntry = {
   name: "Conjure Token", label: "Conjure Token",
@@ -1111,109 +1303,4 @@ contextEntry.onClick = (event, li) => contextEntry.callback(li ?? event?.current
 Hooks.on("getActorContextOptions", (app, options) => { options.push(contextEntry); });
 Hooks.on("getActorDirectoryEntryContext", (app, options) => { options.push(contextEntry); });
 
-// Actor sheet header control
-Hooks.on("getHeaderControlsApplicationV2", (sheet, controls) => {
-  const doc = sheet.document;
-  if (!(doc instanceof Actor) || !doc.isOwner || !canUse(doc)) return;
-  controls.push({ icon: "fa-solid fa-crow", label: "Conjure Token", action: "ccsConjure", onClick: () => openApp(doc) });
-  try { sheet.options.actions ??= {}; sheet.options.actions.ccsConjure ??= () => openApp(doc); } catch (e) { /* ignore */ }
-});
-/* Sheets built on Foundry's older Application V1 (PF2e and Shadowdark use these) don't run the
-   hook above. They ask for their title-bar buttons through this one instead. */
-Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
-  const doc = sheet.actor ?? sheet.document;
-  if (!(doc instanceof Actor) || !doc.isOwner || !canUse(doc)) return;
-  buttons.unshift({ label: "Conjure Token", class: "ccs-conjure", icon: "fa-solid fa-crow", onclick: () => openApp(doc) });
-});
-
-/* Portrait button on dnd5e sheets (edit mode only). */
-function addPortraitBar(sheet, html) {
-  const actor = sheet.document ?? sheet.actor;
-  if (!(actor instanceof Actor) || !canUse(actor)) return;
-  const root = html instanceof HTMLElement ? html : html?.[0] ?? sheet.element;
-  if (!root) return;
-  root.querySelectorAll(".ccs-portrait-bar").forEach((b) => b.remove());
-  const MODES = sheet.constructor?.MODES;
-  const editing = MODES && "_mode" in sheet ? sheet._mode === MODES.EDIT : sheet.isEditable;
-  if (!editing) return;
-  const img = root.querySelector('.portrait img, img.portrait, [data-action="showArtwork"] img, img[data-edit="img"]');
-  const box = img?.closest(".portrait") ?? img?.parentElement;
-  if (!box) return;
-  if (getComputedStyle(box).position === "static") box.style.position = "relative";
-
-  const bar = document.createElement("button");
-  bar.type = "button"; bar.className = "ccs-portrait-bar ccs-at-bottom";
-  bar.innerHTML = `<i class="fa-solid fa-crow"></i><span>Conjure Token</span>`;
-  bar.setAttribute("data-tooltip", "Open Feather & Frame for this actor");
-  bar.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openApp(actor); });
-  box.append(bar);
-}
-
-// Tidy 5e
-const tidyWatched = new WeakSet();
-function findTidyPortrait(root, actor) {
-  const imgs = [...root.querySelectorAll("img")].filter((i) => {
-    const src = i.getAttribute("src") || "";
-    return actor.img && (src === actor.img || decodeURI(i.src).endsWith(actor.img));
-  });
-  if (!imgs.length) return null;
-  imgs.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
-  return imgs[0];
-}
-function findTidyGear(img) {
-  let anc = img.parentElement;
-  for (let i = 0; i < 4 && anc; i++, anc = anc.parentElement) {
-    const icon = anc.querySelector("i.fa-gear, i.fa-cog, i.fa-gears");
-    const btn = icon?.closest("button, a, [role=button]");
-    if (btn) return btn;
-  }
-  return null;
-}
-function placeTidyCrow(root, actor) {
-  const img = findTidyPortrait(root, actor);
-  const gear = img && findTidyGear(img);
-  let crow = root.querySelector(".ccs-portrait-bar");
-  if (!gear || !gear.offsetParent) { crow?.remove(); return; }  // gear is only visible in edit mode
-  const host = img.parentElement;
-  if (!crow || crow.parentElement !== host) {
-    crow?.remove();
-    crow = document.createElement("button");
-    crow.type = "button"; crow.className = "ccs-portrait-bar";
-    crow.innerHTML = `<i class="fa-solid fa-crow"></i><span>Conjure Token</span>`;
-    crow.setAttribute("data-tooltip", "Open Feather & Frame for this actor");
-    crow.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openApp(actor); });
-    host.append(crow);
-  }
-
-  if (getComputedStyle(host).position === "static") host.style.position = "relative";
-  const hr = host.getBoundingClientRect(), ir = img.getBoundingClientRect();
-  const sx = host.offsetWidth ? hr.width / host.offsetWidth : 1, sy = host.offsetHeight ? hr.height / host.offsetHeight : 1;
-  crow.style.left = `${((ir.left + ir.right) / 2 - hr.left) / sx - host.clientLeft}px`;
-  crow.style.top = `${((ir.top + ir.bottom) / 2 - hr.top) / sy - host.clientTop}px`;
-}
-function addTidyCrow(sheet, root, actor) {
-  placeTidyCrow(root, actor);
-  if (tidyWatched.has(root)) return;
-  tidyWatched.add(root);
-  let queued = false;
-  new MutationObserver((muts) => {
-    if (muts.every((m) => m.target.closest?.(".ccs-portrait-bar"))) return;
-    if (queued) return; queued = true;
-    requestAnimationFrame(() => { queued = false; if (root.isConnected) placeTidyCrow(root, sheet.document ?? actor); });
-  }).observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "src", "style", "hidden"] });
-  new ResizeObserver(() => { if (root.isConnected) placeTidyCrow(root, sheet.document ?? actor); }).observe(root);
-}
-function onSheetRender(sheet, html) {
-  const actor = sheet.document ?? sheet.actor;
-  if (!(actor instanceof Actor) || !canUse(actor)) return;
-  const root = html instanceof HTMLElement ? html : html?.[0] ?? sheet.element;
-  if (!root) return;
-  const tidy = root.classList?.contains("tidy5e-sheet") || root.closest?.(".tidy5e-sheet") || root.querySelector?.(".tidy5e-sheet")
-    || /tidy/i.test(sheet.constructor?.name ?? "");
-  if (tidy) return addTidyCrow(sheet, sheet.element ?? root, actor);
-  addPortraitBar(sheet, html);
-}
-Hooks.on("renderActorSheetV2", onSheetRender);
-Hooks.on("renderActorSheet", onSheetRender);
-Hooks.on("tidy5e-sheet.renderActorSheet", onSheetRender);
 

@@ -42,7 +42,11 @@ writeFileSync(join(out, "styles", `ccs-${v}.css`), read("src/ccs.css"));
 writeFileSync(join(out, "tool.html"), wrap(source));
 for (const a of [...Object.keys(ASSETS), ...EXTRA]) writeFileSync(join(out, a), read(a));
 
-const built = { ...manifest, esmodules: [`scripts/main-${v}.js`], styles: [`styles/ccs-${v}.css`] };
+// The download link names this version's release, so installing from a release's own module.json
+// (a pre-release included) gets that release's zip. The manifest link stays on "latest", which is
+// how Foundry finds updates.
+const download = manifest.download.replace("/releases/latest/download/", `/releases/download/${v}/`);
+const built = { ...manifest, download, esmodules: [`scripts/main-${v}.js`], styles: [`styles/ccs-${v}.css`] };
 const manifestText = JSON.stringify(built, null, 2) + "\n";
 writeFileSync(join(out, "module.json"), manifestText);
 writeFileSync(join(root, "dist", "module.json"), manifestText);

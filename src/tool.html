@@ -226,7 +226,7 @@ header p { flex: 0 1 auto; }
         <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
       </div>
     </div>
-    <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Saved Edits</button>
+    <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Edits</button>
     <section class="pane list" aria-label="Tokens">
       <button class="list-tab" id="listShow" title="Show the token list"><b>›</b><span>Tokens</span></button>
       <div class="list-head"><span class="label">Tokens <span id="count">0</span></span><button class="icon-btn" id="listHide" title="Hide the token list">‹ Hide</button></div>
@@ -295,10 +295,10 @@ header p { flex: 0 1 auto; }
         </div>
         <div class="seg" id="tpl">
           <button data-v="standard" aria-pressed="true">Standard</button>
-          <button data-v="big" aria-pressed="false">Big Chungus</button>
+          <button data-v="big" aria-pressed="false">Oversized</button>
         </div>
         <p class="hint"><strong>Standard</strong>: standard tokens with little overhang.</p>
-        <p class="hint"><strong>Big Chungus</strong>: overhang exceeds the grid square.</p>
+        <p class="hint"><strong>Oversized</strong>: overhang exceeds the grid square.</p>
       </div>
 
       <div class="group">
@@ -377,7 +377,7 @@ header p { flex: 0 1 auto; }
       <div class="group">
         <span class="label">Ring and Preview</span>
         <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
-        <p class="hint">Preview only. A custom ring or a background is always saved into the token; otherwise Foundry adds its own ring.</p>
+        <p class="hint">Preview only. A custom ring and its background are always saved into the token; otherwise Foundry adds its own ring.</p>
         <div class="row">
           <label class="btn" for="ringFile">Upload Ring...</label>
           <input id="ringFile" type="file" accept="image/*" hidden>
@@ -385,24 +385,26 @@ header p { flex: 0 1 auto; }
           <button class="btn" id="ringLib">Saved Rings...</button>
         </div>
         <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
-        <div class="row">
-          <label class="btn" for="backFile">Upload Background...</label>
-          <input id="backFile" type="file" accept="image/*" hidden>
-          <button class="btn" id="backClear" hidden>No Background</button>
-          <button class="btn" id="backLib">Saved Backgrounds...</button>
-        </div>
-        <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
-        <div class="group" id="backSizeRow" hidden style="gap:6px">
-          <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
-          <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+        <div class="group" id="backGroup" hidden style="gap:6px">
+          <div class="row">
+            <label class="btn" for="backFile">Upload Background...</label>
+            <input id="backFile" type="file" accept="image/*" hidden>
+            <button class="btn" id="backClear" hidden>No Background</button>
+            <button class="btn" id="backLib">Saved Backgrounds...</button>
+          </div>
+          <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
+          <div class="group" id="backSizeRow" hidden style="gap:6px">
+            <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
+            <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+          </div>
         </div>
         <div class="group" id="ringSizeRow" hidden style="gap:6px">
           <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
           <input type="range" id="ringScale" min="50" max="160" step="1" value="100">
           <p class="hint">Lines a custom ring up with the image circle.</p>
         </div>
-        <label class="check" id="ringCutRow" hidden><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
-        <p class="hint" id="ringCutHint" hidden>Parts of the ring that reach inward sit over the image.</p>
+        <label class="check" id="ringCutRow"><input type="checkbox" id="ringCut" checked> Inner Ring Overhang</label>
+        <p class="hint" id="ringCutHint">Parts of the ring that reach inward sit over the image, except where Restore or an overhang region keeps it.</p>
         <div class="group" id="tintRow" hidden style="gap:6px">
           <label class="check"><input type="checkbox" id="tintOn" checked> Ring Tint</label>
           <p class="hint">The part of the ring Foundry recolors for ring colors, damage flashes and pulses. Hover here to see where it starts and ends.</p>
@@ -475,8 +477,6 @@ header p { flex: 0 1 auto; }
         <div class="wild-list" id="sendWildList" hidden></div>
         <label class="check" id="sendWildAddRow" hidden><input type="checkbox" id="sendWildAdd"> <span id="sendWildAddLabel"></span></label>
       </div>
-      <label class="check"><input type="checkbox" id="sendEdits"> Save Edits to the Actor</label>
-      <p class="hint">Keeps this token's edits with the actor, so you can load them back later and keep working.</p>
       <div class="send-sec" id="sendPlacedSec">
         <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
         <p class="hint">Also changes copies of this actor already on scenes.</p>
@@ -508,7 +508,7 @@ header p { flex: 0 1 auto; }
   <div class="lib-box send-box">
     <div class="lib-head"><h2 id="upListTitle">Remove Dynamic Rings</h2></div>
     <div class="send-body">
-      <p class="hint">Removing a ring takes it off Foundry's Dynamic Token Rings list after the next reload. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
+      <p class="hint">Rings are shared by every world on this server. Removing one takes it off Foundry's Dynamic Token Rings list in every world after their next reload; a world using it goes back to Foundry's Steel ring. Its .json and .webp files stay in the ring spritesheet folder, so delete them there if you don't need them. Uploading under the same name adds it back.</p>
       <div class="group" id="upListRows" style="gap:8px"></div>
       <p class="hint info" id="upListEmpty">No rings uploaded yet.</p>
     </div>
@@ -545,12 +545,18 @@ function drawPlainRing() {
   ring(400, 402, "#25272b");
   return c.toDataURL("image/png");
 }
-let defaultRing = drawPlainRing(), ringBase = 1024;
+let defaultRing = drawPlainRing(), defaultRingOnly = null, ringBase = 1024;
 const TPL = {
   standard: { cx: 512, cy: 511, r: 342, topk: 0.45, ring: 1, box: [0, 0, 1024] },
   big:      { cx: 512, cy: 511, r: 171, topk: 0.55, ring: 0.5, box: [256, 256, 512] },
 };
 const $ = (id) => document.getElementById(id);
+// Waits for an image to load. Used instead of img.decode(), which can wait forever while the page
+// isn't being drawn (a minimized window, or the hidden copy in background mode).
+const loaded = (img) => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise((res, rej) => {
+  img.addEventListener("load", () => res(), { once: true });
+  img.addEventListener("error", () => rej(new Error("the image didn't load")), { once: true });
+}));
 const view = $("view"), vctx = view.getContext("2d"), stage = $("stage");
 let ring = new Image(); ring.src = defaultRing; ring.onload = () => draw();
 let items = [], cur = null, mode = "move", brush = 60, pointer = null, dirHandle = null;
@@ -568,14 +574,21 @@ let ringCustom = false, ringPix = null, ringFrame = null;
 let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
 delete prefs.bakeRing; delete prefs.ringFront; // settings that no longer exist
-function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
+// Background mode: a hidden copy of the tool the module opens to rebuild tokens for a new ring (see
+// rebuildToken). It loads none of the user's saved rings, backgrounds or token list, and saves nothing,
+// so it can never change what the user has open or picked.
+const BACKGROUND = window.name === "ff-background";
+function savePrefs() { if (BACKGROUND) return; try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
 $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringCut").checked = prefs.ringCut;
 $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
-    ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
+    ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null;
+    // Foundry's ring comes with its background filled in, so its inner parts are taken from the ring
+    // drawn on its own (defaultRingOnly) rather than cut out of the filled image.
+    ringFrame = !custom && src === defaultRing && defaultRingOnly ? defaultRingOnly : makeFrame(im);
+    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("tintRow").hidden = $("backGroup").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -713,6 +726,7 @@ async function addRingFile(f) {
   useRing(rec);
 }
 (async () => {
+  if (BACKGROUND) return;
   try {
     if (prefs.ringId) { const rec = await RingDB.get(prefs.ringId); if (rec) { useRing(rec); return; } }
   } catch (e) { /* storage unavailable */ }
@@ -759,11 +773,14 @@ async function addBackFile(f) {
   useBack(rec);
 }
 (async () => {
+  if (BACKGROUND) return;
   try { const rec = prefs.backId && (await RingDB.get(prefs.backId, "backs")); if (rec) useBack(rec); } catch (e) { /* storage unavailable */ }
 })();
+// A background only goes with a saved ring. It stays picked while Foundry's ring is in use, but isn't drawn.
+const backOn = () => !!back && ringCustom;
 /* Sized like the ring image, since ring backgrounds come padded to match their ring. Clipped to the inner circle. */
 function drawBack(x, T) {
-  if (!back) return;
+  if (!backOn()) return;
   const r = T.r * (prefs.ringScale / 100), size = ringRect(T)[2] * (prefs.backScale / 100);
   const k = size / Math.min(back.naturalWidth, back.naturalHeight);
   const w = back.naturalWidth * k, h = back.naturalHeight * k;
@@ -804,17 +821,20 @@ function drawTintBand(T) {
   vctx.restore();
 }
 
-const innerOverhang = () => prefs.ringCut && ringCustom;
-/* Draws the ring over the image, except where the image is kept by overhang regions or Restore. */
+const innerOverhang = () => prefs.ringCut;
+/* Draws the ring over the image, except where the image is kept by overhang regions or Restore.
+   With cut set, that same shape is cut out of the image instead (see composeToken). */
 const overC = document.createElement("canvas"), octx = overC.getContext("2d");
 const prioC = document.createElement("canvas"), pctx = prioC.getContext("2d");
-function drawRingOver(x, it, img, circleOnly) {
+function drawRingOver(x, it, img, circleOnly, cut = false) {
   const T = TPL[it.tpl], tf = x.getTransform(), W = x.canvas.width, H = x.canvas.height;
   for (const c of [overC, prioC]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "source-over"; octx.clearRect(0, 0, W, H);
   octx.setTransform(tf); octx.imageSmoothingQuality = "high";
   octx.save();
-  if (circleOnly) { octx.beginPath(); octx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); octx.clip(); }
+  // The ring layer reaches 2 px past the image circle. The art's own edge there is softened, and an
+  // exact match would leave a thin line of art showing through where the two soft edges meet.
+  if (circleOnly) { octx.beginPath(); octx.arc(T.cx, T.cy, T.r + 2, 0, Math.PI * 2); octx.clip(); }
   octx.drawImage(img, ...ringRect(T));
   octx.restore();
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.globalCompositeOperation = "source-over"; pctx.clearRect(0, 0, W, H);
@@ -824,7 +844,7 @@ function drawRingOver(x, it, img, circleOnly) {
   pctx.globalCompositeOperation = "source-over";
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "destination-out"; octx.drawImage(prioC, 0, 0);
   octx.globalCompositeOperation = "source-over";
-  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(overC, 0, 0); x.restore();
+  x.save(); x.setTransform(1, 0, 0, 1, 0, 0); if (cut) x.globalCompositeOperation = "destination-out"; x.drawImage(overC, 0, 0); x.restore();
 }
 
 function toast(msg, err) {
@@ -843,7 +863,7 @@ async function addFiles(list) {
   for (const f of files) {
     try {
       const url = URL.createObjectURL(f);
-      const img = new Image(); img.src = url; await img.decode();
+      const img = new Image(); img.src = url; await loaded(img);
       const it = { id: Math.random().toString(36).slice(2), name: f.name, file: f, outName: cleanName(f.name), img, w: img.naturalWidth, h: img.naturalHeight,
         tpl: "standard", keep: { tl: true, tr: true, bl: false, br: false }, strokes: [], s: 1, ox: 0, oy: 0, saved: false };
       it.small = alphaSample(img);
@@ -865,7 +885,7 @@ function sourcePixels(it) {
 /* Replace the source image with an edited copy of the same size. */
 async function applyEditedImage(it, canvas, label) {
   const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
-  const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
+  const img = new Image(); img.src = URL.createObjectURL(blob); await loaded(img);
   (it.bgUndo ??= []).push({ img: it.img, file: it.file });
   it.origFile ??= it.file;
   it.img = img; it.file = new File([blob], it.name.replace(/\.[^.]+$/, "") + ".png", { type: "image/png" });
@@ -963,7 +983,7 @@ async function serialize(it) {
   return snap;
 }
 async function restore(snap) {
-  const img = new Image(); img.src = URL.createObjectURL(snap.file); await img.decode();
+  const img = new Image(); img.src = URL.createObjectURL(snap.file); await loaded(img);
   const strokes = await Promise.all((snap.strokes || []).map(async (st) => {
     if (!st.clip || st.clip.canvas) return st;
     const bm = await createImageBitmap(st.clip.png); const c = document.createElement("canvas"); c.width = c.height = SEL;
@@ -976,11 +996,13 @@ async function restore(snap) {
 }
 let persistT = 0;
 function persistSoon() {
+  if (BACKGROUND) return;
   if (listMode() === "session") SESSION.items = items.map(snapshot);  // instant, so closing the window never loses work
   clearTimeout(persistT); persistT = setTimeout(persistNow, 700);
 }
 async function persistNow() {
   clearTimeout(persistT);
+  if (BACKGROUND) return;
   const m = listMode();
   if (m === "session") { SESSION.items = items.map(snapshot); return; }
   SESSION.items = null;
@@ -1526,7 +1548,7 @@ $("ringUpGo").onclick = async () => {
     return;
   }
   if (!name) { st.textContent = "Give the ring a name."; return; }
-  const id = host.ringId(name), old = host.ringLabel(id);
+  const id = host.ringId(name), old = await host.ringLabel(id);
   if (old && go.dataset.armed !== "1") {
     go.dataset.armed = "1"; go.textContent = "Replace";
     st.textContent = `A ring named "${old}" already exists. Click Replace to overwrite it.`; return;
@@ -1534,7 +1556,7 @@ $("ringUpGo").onclick = async () => {
   go.disabled = $("ringUpCancel").disabled = true;
   try {
     st.textContent = "Building the spritesheet...";
-    const { image, json } = await buildRingSheet(id);
+    const { image, json } = await buildRingSheet(id, !!host.hiResRings?.());
     st.textContent = "Uploading...";
     await host.uploadRing({ name, image, json });
     ringUpDone = id; $("ringUpName").disabled = true;
@@ -1687,10 +1709,14 @@ function makeZip(files) {
 }
 let downloads = null;
 
-function bakedRing() { return !!((ringCustom || back) && ring.naturalWidth); }
+// A saved ring (with its background) is always baked in; Foundry's ring too when the GM turned dynamic rings off.
+const bakeAll = () => !!host?.bakeRings?.();
+const baking = () => ringCustom || bakeAll();
+function bakedRing() { return baking() && !!ring.naturalWidth; }
 function bakeNote() {
-  $("bakeInfo").hidden = !(ringCustom || back);
-  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image." : "The custom ring is saved into the token image.";
+  $("bakeInfo").hidden = !baking();
+  $("bakeInfo").textContent = backOn() ? "The ring and background are saved into the token image."
+    : ringCustom ? "The custom ring is saved into the token image." : "Dynamic rings are turned off, so the ring is saved into the token image.";
 }
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
 function composeToken(it, size, withRing) {
@@ -1707,6 +1733,12 @@ function composeToken(it, size, withRing) {
     if (innerOverhang()) drawRingOver(x, it, ringFrame || ring, true);
     x.setTransform(1, 0, 0, 1, 0, 0);
     c = out;
+  } else if (!withRing && host && ring.naturalWidth && innerOverhang()) {
+    // Dynamic ring: Foundry draws its ring behind the token image, so the ring's inner parts are cut
+    // out of the image. The live ring shows through the holes with its tint and effects. Only inside
+    // Foundry, where the tool's ring is the world's real ring; the standalone page's ring is a stand-in.
+    const x = c.getContext("2d"), k = size / 1024;
+    x.setTransform(k, 0, 0, k, 0, 0); drawRingOver(x, it, ringFrame || ring, true, true); x.setTransform(1, 0, 0, 1, 0, 0);
   }
   return c;
 }
@@ -1716,23 +1748,32 @@ function encode(it) {
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", q));
 }
 /* Spritesheet for a Foundry dynamic ring, built from the ring, background and tint in the tool.
-   Each size has a background frame and a ring frame side by side: 2048 on the top row, then 1024,
-   512 and 256 below. Every frame matches the 1024 token canvas, so the ring sits on the token the
-   way the preview shows it. Frame names start with the ring's id so they can't clash with other sheets. */
-const SHEET = [
+   Each size has a background frame and a ring frame side by side. Every frame matches the 1024 token
+   canvas, so the ring sits on the token the way the preview shows it. Frame names start with the
+   ring's id so they can't clash with other sheets.
+   The sheet stays in every player's graphics memory while it's the world's ring, so by default it
+   stops at 1024 (2048 x 1536, about 12 MB): 1024 on the top row, 512 and 256 below. Tokens 3 squares
+   and bigger then use the 1024 frame. The "High resolution rings" setting adds 2048 frames for them
+   (4096 x 3072, about 50 MB). */
+const SHEET = { w: 2048, h: 1536, frames: [
+  { size: 1024, x: 0, y: 0, grid: 2 },
+  { size: 512, x: 0, y: 1024, grid: 1 },
+  { size: 256, x: 1024, y: 1024, grid: 0.5 },
+] };
+const SHEET_HI = { w: 4096, h: 3072, frames: [
   { size: 2048, x: 0, y: 0, grid: 3 },
   { size: 1024, x: 0, y: 2048, grid: 2 },
   { size: 512, x: 2048, y: 2048, grid: 1 },
   { size: 256, x: 3072, y: 2048, grid: 0.5 },
-];
-async function buildRingSheet(id) {
-  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T);
-  const img = document.createElement("canvas"); img.width = 4096; img.height = 3072;
+] };
+async function buildRingSheet(id, hiRes = false) {
+  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T), layout = hiRes ? SHEET_HI : SHEET;
+  const img = document.createElement("canvas"); img.width = layout.w; img.height = layout.h;
   const x = img.getContext("2d"); x.imageSmoothingQuality = "high";
   const frame = (fx, fy, s, extra) => ({ frame: { x: fx, y: fy, w: s, h: s }, rotated: false, trimmed: false,
     spriteSourceSize: { x: 0, y: 0, w: s, h: s }, sourceSize: { w: s, h: s }, anchor: { x: 0.5, y: 0.5 }, ...extra });
   const frames = {};
-  for (const { size: s, x: fx, y: fy, grid } of SHEET) {
+  for (const { size: s, x: fx, y: fy, grid } of layout.frames) {
     const k = s / 1024, name = `${id}-${s}`;
     x.save(); x.beginPath(); x.rect(fx, fy, s, s); x.clip(); x.setTransform(k, 0, 0, k, fx, fy); drawBack(x, T); x.restore();
     x.save(); x.beginPath(); x.rect(fx + s, fy, s, s); x.clip(); x.drawImage(ring, fx + s + rx * k, fy + ry * k, rw * k, rh * k); x.restore();
@@ -1744,7 +1785,8 @@ async function buildRingSheet(id) {
   const band = prefs.tintOn ? { startRadius: r(prefs.tintStart), endRadius: r(prefs.tintEnd) } : { startRadius: 0, endRadius: 0 };
   const json = { frames, config: { defaultColorBand: band, defaultRingColor: prefs.tintColor },
     meta: { app: "Feather & Frame", image: `${id}.webp`, format: "RGBA8888", size: { w: img.width, h: img.height }, scale: "1" } };
-  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", +prefs.quality));
+  // A fixed quality, not the token Quality setting: every player downloads this file, so Lossless would cost them all.
+  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", 0.9));
   return { image, json };
 }
 async function saveBlob(name, blob) {
@@ -1915,10 +1957,16 @@ $("actorFind").oninput = () => { filterActors(); showHits(); };
 $("actorFind").onfocus = showHits;
 $("actorFind").onblur = () => { $("actorHits").hidden = true; };
 
-/* The list under the search box. Shows while there's text, picked actor highlighted. */
+/* The actors listed under the search box: from the second letter on, and no more than the user's
+   "Actor search results" setting (5 unless changed), so a big world doesn't load hundreds of pictures. */
+function searchHits() {
+  if ($("actorFind").value.trim().length < 2) return [];
+  return [...$("actorSel").options].filter((o) => o.value && matchesSearch(o)).slice(0, host?.searchLimit?.() || 5);
+}
+/* The list under the search box, picked actor highlighted. */
 function showHits() {
   const box = $("actorHits"), sel = $("actorSel");
-  const found = $("actorFind").value.trim() ? [...sel.options].filter((o) => o.value && matchesSearch(o)) : [];
+  const found = searchHits();
   box.replaceChildren(...found.map((o) => {
     const row = document.createElement("div");
     const img = document.createElement("img");
@@ -1938,7 +1986,8 @@ function showHits() {
    search. The cursor stays in the box, so you can keep typing. */
 $("actorFind").onkeydown = (e) => {
   const sel = $("actorSel");
-  const found = [...sel.options].filter((o) => o.value && matchesSearch(o));
+  // Arrow keys step through the listed actors; before the list appears, through every match.
+  const hits = searchHits(), found = hits.length ? hits : [...sel.options].filter((o) => o.value && matchesSearch(o));
   const at = found.findIndex((o) => o.value === sel.value);
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
@@ -1974,17 +2023,20 @@ let ringAsk = 0;
 async function foundryRing(id) {
   if (!host?.ring) return;
   const n = ++ringAsk;
-  let url = null;
-  try { url = await host.ring(id); } catch (e) { console.warn("Feather & Frame | ring", e); }
+  let url = null, only = null;
+  try { [url, only] = await Promise.all([host.ring(id), host.ringOnly?.(id)]); } catch (e) { console.warn("Feather & Frame | ring", e); }
   if (!url || n !== ringAsk) return;
-  defaultRing = url;
+  let im = null;
+  if (only) { im = new Image(); im.src = only; try { await loaded(im); } catch (e) { im = null; } }
+  if (n !== ringAsk) return;
+  defaultRing = url; defaultRingOnly = im;
   if (!ringRec) loadRing(url, false);
   renderLib();
 }
 function attachHost(h, actorId) {
   host = h;
   $("actorPick").hidden = false; $("sendActor").hidden = false; $("mapPrev").hidden = !host.previewStart; $("helpBtn").hidden = true;
-  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings;
+  $("ringUp").hidden = !host.uploadRing; $("upRings").hidden = !host.uploadedRings; bakeNote();
   const sel = $("actorSel");
   for (const a of host.actors()) sel.add(new Option(a.name, a.id));
   setActor(actorId || "");
@@ -2009,7 +2061,6 @@ $("sendActor").onclick = () => {
   $("sendTitle").title = $("sendTitle").textContent;   // full name on hover when it's cut off
   $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
   sendPortraitFile = null;
-  $("sendEdits").checked = prefs.saveEdits !== false;
   fillWild(id);
   $("sendPlacedSec").hidden = !!host.isPack?.(id);   // compendium actors have no tokens on scenes
   $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
@@ -2029,7 +2080,7 @@ function fillWild(id) {
     const c = document.createElement("canvas"); c.width = c.height = 72;
     c.getContext("2d").drawImage(renderToken(it, 144), 0, 0, 72, 72);
     const nm = document.createElement("span");
-    nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Big Chungus" : "Standard"}, can't mix templates)`);
+    nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Oversized" : "Standard"}, can't mix templates)`);
     nm.title = nm.textContent;
     row.append(cb, c, nm); list.append(row);
   }
@@ -2061,7 +2112,6 @@ function syncPortraitFrom() {
 }
 $("sendWildList").addEventListener("change", syncPortraitFrom);
 $("sendWild").onchange = syncWild;
-$("sendEdits").onchange = (e) => host?.savePref("saveEdits", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
   $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
@@ -2093,7 +2143,6 @@ $("sendGo").onclick = async () => {
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
       portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
-      saveEdits: $("sendEdits").checked,
       portraitFrom: $("sendPortraitFromRow").hidden ? null : $("sendPortraitFrom").value || null },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
     closeSend(); toast(msg); syncLoadEdits();
@@ -2178,7 +2227,7 @@ async function importEdit(text) {
 function syncLoadEdits() {
   const n = host?.savedEdits?.($("actorSel").value) ?? 0;
   $("loadEdits").hidden = !n;
-  $("loadEdits").textContent = n > 1 ? `Load Saved Edits (${n})` : "Load Saved Edits";
+  $("loadEdits").textContent = n > 1 ? `Load Edits (${n})` : "Load Edits";
 }
 $("loadEdits").onclick = async () => {
   const btn = $("loadEdits"); btn.disabled = true;
@@ -2199,6 +2248,21 @@ $("loadEdits").onclick = async () => {
   finally { btn.disabled = false; }
 };
 
-window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, flush: persistNow, attachHost, setActor, exportEdit };
-loadKeptList();
+/* Background mode's one job: rebuild a sent token from its saved edit, cut for a ring. ringSrc is the
+   world's ring as the module draws it, and cut is the Inner Ring Overhang choice recorded at the send.
+   Returns the token image, ready to upload. */
+let bgRingSrc = null;
+async function rebuildToken(text, ringSrc, cut) {
+  if (!BACKGROUND) throw new Error("rebuildToken only runs in background mode");
+  host ??= { bakeRings: () => false };   // composeToken only cuts inside Foundry, which this is
+  if (bgRingSrc !== ringSrc) {
+    const im = new Image(); im.src = ringSrc; await loaded(im);
+    ring = im; ringCustom = false; ringBase = 1024; ringPix = null; ringFrame = makeFrame(im); bgRingSrc = ringSrc;
+  }
+  prefs.ringScale = 100; prefs.ringCut = !!cut; back = null;
+  return encode(await importEdit(text));
+}
+
+window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, overhang: innerOverhang, flush: persistNow, attachHost, setActor, exportEdit, rebuildToken };
+if (!BACKGROUND) loadKeptList();
 </script>
