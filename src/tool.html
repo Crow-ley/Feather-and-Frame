@@ -568,7 +568,11 @@ let ringCustom = false, ringPix = null, ringFrame = null;
 let back = null, backUrl = null, backRec = null;
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("ccs.settings") || "{}")); } catch (e) {}
 delete prefs.bakeRing; delete prefs.ringFront; // settings that no longer exist
-function savePrefs() { try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
+// Background mode: a hidden copy of the tool the module opens to rebuild tokens for a new ring (see
+// rebuildToken). It loads none of the user's saved rings, backgrounds or token list, and saves nothing,
+// so it can never change what the user has open or picked.
+const BACKGROUND = window.name === "ff-background";
+function savePrefs() { if (BACKGROUND) return; try { localStorage.setItem("ccs.settings", JSON.stringify(prefs)); } catch (e) {} }
 $("quality").value = prefs.quality; $("showRing").checked = prefs.ring; $("showGhost").checked = prefs.ghost; $("showBox").checked = prefs.box;
 $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ringScale + "%"; $("ringCut").checked = prefs.ringCut;
 $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
@@ -713,6 +717,7 @@ async function addRingFile(f) {
   useRing(rec);
 }
 (async () => {
+  if (BACKGROUND) return;
   try {
     if (prefs.ringId) { const rec = await RingDB.get(prefs.ringId); if (rec) { useRing(rec); return; } }
   } catch (e) { /* storage unavailable */ }
@@ -759,6 +764,7 @@ async function addBackFile(f) {
   useBack(rec);
 }
 (async () => {
+  if (BACKGROUND) return;
   try { const rec = prefs.backId && (await RingDB.get(prefs.backId, "backs")); if (rec) useBack(rec); } catch (e) { /* storage unavailable */ }
 })();
 // A background only goes with a saved ring. It stays picked while Foundry's ring is in use, but isn't drawn.
@@ -979,11 +985,13 @@ async function restore(snap) {
 }
 let persistT = 0;
 function persistSoon() {
+  if (BACKGROUND) return;
   if (listMode() === "session") SESSION.items = items.map(snapshot);  // instant, so closing the window never loses work
   clearTimeout(persistT); persistT = setTimeout(persistNow, 700);
 }
 async function persistNow() {
   clearTimeout(persistT);
+  if (BACKGROUND) return;
   const m = listMode();
   if (m === "session") { SESSION.items = items.map(snapshot); return; }
   SESSION.items = null;
@@ -2216,6 +2224,21 @@ $("loadEdits").onclick = async () => {
   finally { btn.disabled = false; }
 };
 
-window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, overhang: innerOverhang, flush: persistNow, attachHost, setActor, exportEdit };
-loadKeptList();
+/* Background mode's one job: rebuild a sent token from its saved edit, cut for a ring. ringSrc is the
+   world's ring as the module draws it, and cut is the Inner Ring Overhang choice recorded at the send.
+   Returns the token image, ready to upload. */
+let bgRingSrc = null;
+async function rebuildToken(text, ringSrc, cut) {
+  if (!BACKGROUND) throw new Error("rebuildToken only runs in background mode");
+  host ??= { bakeRings: () => false };   // composeToken only cuts inside Foundry, which this is
+  if (bgRingSrc !== ringSrc) {
+    const im = new Image(); im.src = ringSrc; await im.decode();
+    ring = im; ringCustom = false; ringBase = 1024; ringPix = null; ringFrame = makeFrame(im); bgRingSrc = ringSrc;
+  }
+  prefs.ringScale = 100; prefs.ringCut = !!cut; back = null;
+  return encode(await importEdit(text));
+}
+
+window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, overhang: innerOverhang, flush: persistNow, attachHost, setActor, exportEdit, rebuildToken };
+if (!BACKGROUND) loadKeptList();
 </script>
