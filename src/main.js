@@ -238,7 +238,9 @@ function ringColour(own, frameColour, sheetColour) {
 // Foundry's ring shader: the background is tinted with an overlay blend, and inside the colour
 // band (or under the "-msk" mask frame, when a sheet has one) the ring colour is multiplied by
 // the art's red channel.
-async function ringImage(actor) {
+// With ringOnly, the background is left out: the tool needs the ring on its own to know which of its
+// parts reach in over the art, since a background fills the whole inside.
+async function ringImage(actor, ringOnly = false) {
   const sheet = await loadRingSheet(ringSheetPath());
   if (!sheet) return null;
   // Like Foundry, use the ring frame made for this token's grid size (a sheet can draw small and
@@ -259,7 +261,7 @@ async function ringImage(actor) {
 
   const out = new ImageData(size, size), o = out.data;
   const R = framePixels(img, ring, size).data;
-  const B = bkg ? framePixels(img, bkg, size).data : null;
+  const B = bkg && !ringOnly ? framePixels(img, bkg, size).data : null;
   const M = msk ? framePixels(img, msk, size).data : null;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const i = (y * size + x) * 4;
@@ -425,6 +427,7 @@ class FeatherFrameApp extends ApplicationV2 {
       previewUpdate: (src, opts) => this.previewUpdate(src, opts),
       previewStop: () => this.previewStop(),
       ring: (id) => ringImage(getActor(id)),
+      ringOnly: (id) => ringImage(getActor(id), true),
       bakeRings: () => game.settings.get(ID, "bakeRings"),
       searchLimit: () => game.settings.get(ID, "searchLimit"),
       ringId: (name) => ringId(name),
@@ -1036,18 +1039,22 @@ function validEdit(json) {
   if (it.strokes != null && !Array.isArray(it.strokes)) return false;
   return (it.strokes ?? []).every((s) => s && typeof s === "object" && (!s.clip || (typeof s.clip.png === "string" && DATA_URL.test(s.clip.png))));
 }
+/* One saved edit's text, with its portrait link filled in, or null if it can't be read. */
+async function readEdit(e) {
+  try {
+    const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
+    if (!res.ok) return null;
+    const text = await fillLinks(await res.text());
+    return validEdit(text) ? text : null;
+  } catch (err) { return null; }
+}
 async function loadEdits(actor) {
   if (!actor || !canUse(actor)) throw new Error("You can't open this actor's edits.");
   const texts = [];
   let missing = 0;
   for (const e of savedEdits(actor)) {
-    try {
-      const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
-      if (!res.ok) throw new Error(res.status);
-      const text = await fillLinks(await res.text());
-      if (!validEdit(text)) throw new Error("not a saved edit");
-      texts.push(text);
-    } catch (err) { missing++; }
+    const text = await readEdit(e);
+    if (text) texts.push(text); else missing++;
   }
   return { texts, missing };
 }
@@ -1090,6 +1097,134 @@ function openApp(actor) {
 
 // Text going into a dialog's HTML (the GM approval dialog).
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Automatic token update
+// A dynamic token has the world ring's inner parts cut out of its image (composeToken in the tool), so
+// its holes only fit the ring it was sent with. When the world's ring changes, or an actor arrives from
+// another world, the active GM's client rebuilds those tokens from their saved edits in a hidden copy of
+// the tool (background mode) and writes them over the old files: the same files within one world, or
+// this world's actor folder for an actor from another world. One actor at a time, so Foundry stays usable.
+const stripV = (p) => String(p ?? "").replace(/\?.*$/, "");
+const baseName = (p) => stripV(p).split("/").pop();
+const isActiveGM = () => game.user.isGM && game.users.activeGM === game.user;
+
+/* Whether an actor's dynamic token was cut for another ring, or in another world. */
+function needsRecut(actor, sheet) {
+  const note = actor?.getFlag?.(ID, "ring");
+  return !!note && typeof note === "object" && (note.world !== game.world.id || note.sheet !== sheet);
+}
+/* The saved edits that name the token image made from them (sends from 1.1.0 on). */
+const recutEdits = (actor) => savedEdits(actor).filter((e) => pathOk(e.token, /\.webp$/i));
+/* Why an actor can't be rebuilt, or null if it can. Its token must still be the one the tool sent. */
+function recutProblem(actor) {
+  const edits = recutEdits(actor), tok = actor.prototypeToken, set = actor.getFlag(ID, "wildcard");
+  if (!edits.length) return "no saved edits";
+  if (set ? tok.texture?.src !== set.wild : stripV(tok.ring?.subject?.texture) !== edits[0].token) return "token changed by hand";
+  return null;
+}
+
+/* The hidden copy of the tool, started in background mode. */
+async function backgroundTool() {
+  const frame = document.createElement("iframe");
+  frame.name = "ff-background";
+  frame.style.cssText = "position:fixed;left:-20px;top:-20px;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
+  frame.srcdoc = await loadToolPage();
+  document.body.append(frame);
+  for (let i = 0; i < 150 && !frame.contentWindow?.CCS?.rebuildToken; i++) await new Promise((r) => setTimeout(r, 100));
+  const tool = frame.contentWindow?.CCS;
+  if (!tool?.rebuildToken) { frame.remove(); throw new Error("the background tool didn't start"); }
+  return { tool, close: () => frame.remove() };
+}
+
+/* Rebuilds one actor's tokens for the world's ring, uploads them, and points the actor and its placed
+   tokens at them. A token whose edit can't be read is copied over unchanged when the actor is new here,
+   so a wildcard set stays whole. */
+async function recutActor(actor, tool, sheet) {
+  const note = actor.getFlag(ID, "ring"), set = actor.getFlag(ID, "wildcard"), adopt = note.world !== game.world.id;
+  const ringSrc = await ringImage(actor, true);   // the holes only depend on the ring's own shape
+  if (!ringSrc) throw new Error("the world's ring couldn't be read");
+  const folder = set ? (adopt ? `${actorFolder(actor)}/set-${Date.now().toString(36)}` : stripV(set.folder)) : actorFolder(actor);
+  const done = new Map();   // old token path -> new token path
+  for (const e of recutEdits(actor)) {
+    const text = await readEdit(e);
+    let blob = text ? await tool.rebuildToken(text, ringSrc, note.cut) : null;
+    if (!blob && adopt) blob = await fetch(`${routeOf(e.token)}?v=${Date.now().toString(36)}`).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+    if (!blob) continue;
+    const name = set ? baseName(e.token) : `${fileName(actor)}-token.webp`;
+    done.set(e.token, await upload(new File([blob], name, { type: "image/webp" }), folder));
+  }
+  if (!done.size) throw new Error("its saved edits couldn't be read");
+
+  const tok = actor.prototypeToken, update = {
+    [`flags.${ID}.ring`]: { world: game.world.id, sheet, cut: !!note.cut },
+    [`flags.${ID}.edits`]: savedEdits(actor).map((e) => (done.has(e.token) ? { ...e, token: stripV(done.get(e.token)) } : e)),
+  };
+  if (set) {
+    const wild = `${stripV([...done.values()][0]).replace(/\/[^/]*$/, "")}/*.webp`;
+    update["prototypeToken.texture.src"] = wild;
+    update[`flags.${ID}.wildcard`] = { ...set, folder, wild };
+  } else {
+    const [oldPath, newPath] = [...done][0];
+    update["prototypeToken.ring.subject.texture"] = newPath;
+    if (stripV(tok.texture?.src) === oldPath) update["prototypeToken.texture.src"] = newPath;
+  }
+  await actor.update(update);
+  // Placed tokens: only the ones still showing one of the old images.
+  for (const scene of game.scenes) {
+    const ups = [];
+    for (const t of scene.tokens) {
+      if (t.actorId !== actor.id) continue;
+      const u = { _id: t.id }, sub = done.get(stripV(t.ring?.subject?.texture)), src = done.get(stripV(t.texture?.src));
+      if (sub) u["ring.subject.texture"] = sub;
+      if (src) u["texture.src"] = src;
+      if (sub || src) ups.push(u);
+    }
+    if (ups.length) await scene.updateEmbeddedDocuments("Token", ups);
+  }
+}
+
+/* Finds the actors that need it and rebuilds them, with a notice at the start and the end. Actors that
+   can never be rebuilt (no saved edits, or a token changed by hand) lose their note, so they aren't
+   reported again; ones that failed keep it and are tried again on the next load. */
+async function recutTokens(actors) {
+  const sheet = ringSheetPath();
+  if (!sheet) return;
+  const todo = actors.filter((a) => !a.pack && needsRecut(a, sheet));
+  if (!todo.length) return;
+  const skipped = [], failed = [], ready = [];
+  for (const a of todo) {
+    const why = recutProblem(a);
+    if (!why) { ready.push(a); continue; }
+    skipped.push(`${a.name} (${why})`);
+    await a.update({ [`flags.${ID}.ring`]: null }).catch(() => {});
+  }
+  let updated = 0;
+  if (ready.length) {
+    ui.notifications.info(`${TITLE}: updating ${ready.length} token${ready.length > 1 ? "s" : ""} for the world's ring...`);
+    let bg = null;
+    try {
+      bg = await backgroundTool();
+      for (const a of ready) {
+        try { await recutActor(a, bg.tool, sheet); updated++; }
+        catch (e) { failed.push(`${a.name} (${e?.message ?? e})`); console.warn(`${TITLE} | token update: ${a.name}`, e); }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } catch (e) { failed.push(`all (${e?.message ?? e})`); console.warn(`${TITLE} | token update`, e); }
+    finally { bg?.close(); }
+  }
+  const not = skipped.length + failed.length;
+  if (updated || not) {
+    const msg = `${TITLE}: updated ${updated} token${updated === 1 ? "" : "s"} for the world's ring.` + (not ? ` ${not} couldn't be updated; see the console (F12).` : "");
+    if (not) { ui.notifications.warn(msg); console.warn(`${TITLE} | not updated:\n${[...skipped, ...failed].join("\n")}`); }
+    else ui.notifications.info(msg);
+  }
+}
+// One update at a time; a new request waits for the one running.
+let recutQueue = Promise.resolve();
+const queueRecut = (actors) => { recutQueue = recutQueue.then(() => recutTokens(actors)).catch((e) => console.warn(`${TITLE} | token update`, e)); };
+// On load (after the other start-up work), and when an actor is created or imported.
+Hooks.once("ready", () => { if (isActiveGM()) setTimeout(() => queueRecut(game.actors.contents), 3000); });
+Hooks.on("createActor", (actor) => { if (isActiveGM() && !actor.pack) queueRecut([actor]); });
 
 // Map preview upkeep
 Hooks.on("refreshToken", (t) => app?.previewRefresh(t));
