@@ -8,10 +8,10 @@ const TITLE = "Feather & Frame";
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
-  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved.", type: String, default: "tokens/actors" });
-  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images.", type: String, default: "tokens/actors/portraits" });
+  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder.", type: String, default: "tokens/actors" });
+  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images. Each world saves into its own subfolder.", type: String, default: "tokens/actors/portraits" });
   reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
-  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
+  reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Each world saves into its own subfolder.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
@@ -81,6 +81,9 @@ const cleanFolder = (f) => String(f || "").trim().replace(/\\/g, "/").replace(/^
 // File names keep letters, digits and a few marks; ".." and leading dots can't survive, so a name
 // can never climb out of its folder.
 const safeName = (n) => String(n || "token").replace(/[^\w\-. ()']+/g, "_").replace(/\.{2,}/g, ".").replace(/^[._ ]+|[._ ]+$/g, "") || "token";
+// A folder setting plus this world's own subfolder. Worlds on one server (and actors shared
+// through compendiums) then never overwrite each other's files.
+const worldFolder = (key) => `${cleanFolder(game.settings.get(ID, key))}/${safeName(game.world.id)}`;
 // A folder below the token folder, made only of the marks safeName keeps and with no "." or ".."
 // parts. Folders read from actor flags must pass this: an actor's owner can write those flags.
 function inTokenFolder(f) {
@@ -116,7 +119,7 @@ async function upload(file, folder) {
 const ringId = (name) => "ff-" + (String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ring");
 async function uploadRing({ name, image, json }) {
   if (!game.user.isGM) throw new Error("only a GM can upload dynamic rings");
-  const id = ringId(name), folder = game.settings.get(ID, "ringFolder");
+  const id = ringId(name), folder = worldFolder("ringFolder");
   const img = await upload(new File([image], `${id}.webp`, { type: "image/webp" }), folder);
   // The sheet names its image relative to itself; the version tag makes a replaced image load fresh.
   json.meta.image = img.split("/").pop();
@@ -592,7 +595,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
   const base = fileBase(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
-  const folder = game.settings.get(ID, "tokenFolder");
+  const folder = worldFolder("tokenFolder");
   const n = pkg.tokens.length;
 
   // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
@@ -637,7 +640,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), game.settings.get(ID, "portraitFolder"));
+    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), worldFolder("portraitFolder"));
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
