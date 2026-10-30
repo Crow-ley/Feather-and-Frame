@@ -14,41 +14,43 @@ It needs Foundry v13 or newer. I use it with the dnd5e and Tidy 5e sheets, on th
 
 ## Features
 
-- Auto-fit places the art in the ring. Standard tokens are 1024 px; Big Chungus tokens are 2048 px for art that spills well past the grid square.
-- Overhang corners let parts of the art sit on top of the ring.
+- Auto-fit places the art in the ring. Standard tokens are 1024 px; Oversized tokens are 2048 px for art that spills well past the grid square.
+- Overhang corners for quick tokens.
 - Restore and Erase brushes, plus Lasso and Fuzzy select
 - One-click removal for plain backgrounds
 - Uses the ring picked in Foundry's Dynamic Token Ring setting, colored the way the actor's token will look
-- Custom rings, with a saved ring library
+- Custom rings, and backgrounds with a saved ring library.
+- Combine custom rings and backgrounds into dynamic rings, built into Foundry.
+- Inner Ring Overhang for dynamic rings
+- Tokens keep up with ring changes. Switch the world’s ring and the next time the world loads, tokens are rebuilt from their saved edits to fit the new ring. Hand changed tokens are left alone
 - An option to bake the ring into the image for VTTs without dynamic rings
 - Send to Actor uploads the token, turns on the ring and sets the scale values for you. It can also set the portrait (the original image or another one you pick) and update tokens already placed on scenes.
 - Wildcard sets: send several tokens as one set and Foundry gives each token you place a random one, ring included. You can add more to a set later, and choose which token's original art becomes the portrait.
-- Saved edits: each send can keep the token's edits with the actor. Next time, pick the actor and click Load Saved Edits to carry on where you left off.
-- Works with actors stored in compendiums (GM only, can be turned off in the settings): drag one from a compendium onto the actor box, or use the crow on its sheet. Sending changes the compendium entry, so unlock the compendium first.
+- Saved edits: each send can keep the token's edits with the actor. Next time you pick the actor it will load from where you left off.
+- Works with actors stored in compendiums (GM only, can be turned off in the settings): drag one from a compendium onto the actor box. Sending changes the compendium entry, so unlock the compendium first.
+- Actor search bar for worlds with many actors
 - Preview on Map shows your edits on the actor's token in the open scene before you send. Only you see it.
 - Drag tokens from the list next to the one you're editing to compare them.
 - Ctrl+Z undoes brush strokes, moves and scaling.
-- Checks GitHub for new versions. When one is out, the GM sees a notice with the manifest URL the first time they open the window that session. You can turn this off in the module settings.
 - A GM setting lets players make tokens for characters they own. Players without Foundry's upload permission can still use it: their token goes to a GM, who sees a preview and approves it before anything is uploaded.
 
 ## Usage
 
-Click the crow on a character's portrait while the sheet is in edit mode. You can also open it from the Actors sidebar or an actor's right-click menu. Load an image, adjust it, pick the actor and click Send to Actor.
+Click on a character's portrait while the sheet is in edit mode to open the tool, shift+click to change the portrait like normal. You can also open it from the Actors sidebar or an actor's right-click menu. Load an image, adjust it, pick the actor and click Send to Actor.
 
-Standard tokens get a token scale of 1 and a ring scale correction of 1. Big Chungus tokens get 2 and 2. You can change these in the module settings.
+Standard tokens get a token scale of 1 and a ring scale correction of 1. Oversized tokens get 2 and 2. You can change these in the module settings.
 
 ## Without Foundry
 
 The tool also works on its own for other VTTs or plain token making. Each release has two downloads for this:
 
-- `Feather.Frame.exe`, a standalone Windows app. Download it and run it, no install needed.
 - `Feather.Frame.html`, the same tool as a single web page that opens in any browser.
 
 Both make the same ringed tokens as the module and save them as WebP files. Without Foundry there's no dynamic ring to read, so they use a plain default ring, or a custom ring you load. Bake the ring into the image for VTTs that don't have dynamic rings.
 
 ## Outside connections
 
-The only request the module makes outside your Foundry server is the update check: one request per session to api.github.com, only for the GM. Turn it off with the "Check GitHub for updates" setting and the module stays entirely on your server. Your images are uploaded only to your own Foundry data folder.
+This module makes no outside requests
 
 The fonts, icons and images ship with the module. The two fonts, IM Fell English SC and Alegreya Sans, are under the SIL Open Font License; the license files are in `assets/fonts`.
 
