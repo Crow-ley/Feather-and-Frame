@@ -377,7 +377,8 @@ class FeatherFrameApp extends ApplicationV2 {
       loadEdits: (id) => loadEdits(getActor(id)),
       wildcard: (id) => wildcardSet(getActor(id)),
       needsGM: (wild) => needsApproval(!!wild),
-      savePref: (key, value) => game.settings.set(ID, key, value),
+      // Only the tool's own per-user choices; module and world settings stay in Foundry's settings window.
+      savePref: (key, value) => (["usePortrait", "updatePlaced"].includes(key) ? game.settings.set(ID, key, !!value) : null),
       selected: (id) => { this.actor = getActor(id); },
       send: (opts, progress) => this.send(opts, progress),
       previewStart: (id) => this.previewStart(id),
@@ -388,7 +389,7 @@ class FeatherFrameApp extends ApplicationV2 {
       ringId: (name) => ringId(name),
       ringLabel: (id) => game.settings.get(ID, "rings").find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
-      applyRing: async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); },
+      applyRing: game.user.isGM ? async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); } : null,
       uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,
         file: String(r.spritesheet).replace(/\?.*$/, ""), world: r.id === game.settings.get("core", "dynamicTokenRing") })) : null,
       removeRing: (id) => removeRing(id),
