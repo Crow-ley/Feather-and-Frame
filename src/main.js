@@ -1127,7 +1127,7 @@ function needsRecut(actor, sheet) {
   const note = actor?.getFlag?.(ID, "ring");
   return !!note && typeof note === "object" && (note.world !== game.world.id || note.sheet !== sheet);
 }
-/* The saved edits that name the token image made from them (sends from 1.1.0 on). */
+/* The saved edits that name the token image made from them (sends from 2.0.0 on). */
 const recutEdits = (actor) => savedEdits(actor).filter((e) => pathOk(e.token, /\.webp$/i));
 /* Why an actor can't be rebuilt, or null if it can. Its token must still be the one the tool sent. */
 function recutProblem(actor) {
