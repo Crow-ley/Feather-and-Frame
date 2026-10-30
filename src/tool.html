@@ -226,7 +226,7 @@ header p { flex: 0 1 auto; }
         <select id="actorSel" aria-label="Actor"><option value="">Choose an actor...</option></select>
       </div>
     </div>
-    <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Saved Edits</button>
+    <button class="btn load-edits" id="loadEdits" hidden title="Bring back the edits saved the last time you sent to this actor">Load Edits</button>
     <section class="pane list" aria-label="Tokens">
       <button class="list-tab" id="listShow" title="Show the token list"><b>›</b><span>Tokens</span></button>
       <div class="list-head"><span class="label">Tokens <span id="count">0</span></span><button class="icon-btn" id="listHide" title="Hide the token list">‹ Hide</button></div>
@@ -477,8 +477,6 @@ header p { flex: 0 1 auto; }
         <div class="wild-list" id="sendWildList" hidden></div>
         <label class="check" id="sendWildAddRow" hidden><input type="checkbox" id="sendWildAdd"> <span id="sendWildAddLabel"></span></label>
       </div>
-      <label class="check"><input type="checkbox" id="sendEdits"> Save Edits to the Actor</label>
-      <p class="hint">Keeps this token's edits with the actor, so you can load them back later and keep working.</p>
       <div class="send-sec" id="sendPlacedSec">
         <label class="check"><input type="checkbox" id="sendPlaced"> Update placed tokens</label>
         <p class="hint">Also changes copies of this actor already on scenes.</p>
@@ -2024,7 +2022,6 @@ $("sendActor").onclick = () => {
   $("sendTitle").title = $("sendTitle").textContent;   // full name on hover when it's cut off
   $("sendPortrait").checked = !!prefs.usePortrait; $("sendPlaced").checked = !!prefs.updatePlaced;
   sendPortraitFile = null;
-  $("sendEdits").checked = prefs.saveEdits !== false;
   fillWild(id);
   $("sendPlacedSec").hidden = !!host.isPack?.(id);   // compendium actors have no tokens on scenes
   $("sendStatus").textContent = ""; $("sendStatus").className = "hint info send-status";
@@ -2076,7 +2073,6 @@ function syncPortraitFrom() {
 }
 $("sendWildList").addEventListener("change", syncPortraitFrom);
 $("sendWild").onchange = syncWild;
-$("sendEdits").onchange = (e) => host?.savePref("saveEdits", e.target.checked);
 function syncSendPortrait() {
   $("sendPortraitName").hidden = !sendPortraitFile;
   $("sendPortraitLabel").textContent = sendPortraitFile ? "Portrait: " + sendPortraitFile.name : "";
@@ -2108,7 +2104,6 @@ $("sendGo").onclick = async () => {
   try {
     const msg = await host.send({ actorId: $("actorSel").value, usePortrait: $("sendPortrait").checked,
       portraitFile: sendPortraitFile, updatePlaced: $("sendPlaced").checked, wildcard,
-      saveEdits: $("sendEdits").checked,
       portraitFrom: $("sendPortraitFromRow").hidden ? null : $("sendPortraitFrom").value || null },
       (m) => { st.textContent = m; st.className = "hint info send-status"; });
     closeSend(); toast(msg); syncLoadEdits();
@@ -2193,7 +2188,7 @@ async function importEdit(text) {
 function syncLoadEdits() {
   const n = host?.savedEdits?.($("actorSel").value) ?? 0;
   $("loadEdits").hidden = !n;
-  $("loadEdits").textContent = n > 1 ? `Load Saved Edits (${n})` : "Load Saved Edits";
+  $("loadEdits").textContent = n > 1 ? `Load Edits (${n})` : "Load Edits";
 }
 $("loadEdits").onclick = async () => {
   const btn = $("loadEdits"); btn.disabled = true;

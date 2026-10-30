@@ -20,7 +20,6 @@ Hooks.once("init", () => {
   reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
-  game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
   // Rings uploaded from the tool, each { id, label, spritesheet }.
   game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
@@ -373,7 +372,7 @@ class FeatherFrameApp extends ApplicationV2 {
         if (a.pack && !packAllowed()) { ui.notifications.warn(PACK_OFF); return null; }
         return canUse(rememberPackActor(a)) ? info(a) : null;
       },
-      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced"), saveEdits: game.settings.get(ID, "saveEdits") }),
+      prefs: () => ({ usePortrait: game.settings.get(ID, "usePortrait"), updatePlaced: game.settings.get(ID, "updatePlaced") }),
       savedEdits: (id) => savedEdits(getActor(id)).length,
       loadEdits: (id) => loadEdits(getActor(id)),
       wildcard: (id) => wildcardSet(getActor(id)),
@@ -500,7 +499,7 @@ class FeatherFrameApp extends ApplicationV2 {
   /* Send to Actor. The token is rendered here; the uploads and actor changes happen in
      applyPackage, either right away or, for a player without upload permission, on a GM's
      computer after the GM approves. */
-  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, saveEdits = false, portraitFrom = null }, progress = () => {}) {
+  async send({ actorId, usePortrait, portraitFile, updatePlaced, wildcard = null, portraitFrom = null }, progress = () => {}) {
     const tool = this.tool;
     const inPack = String(actorId ?? "").startsWith("Compendium.");
     const actor = inPack ? await freshPackActor(actorId) : getActor(actorId);
@@ -511,7 +510,7 @@ class FeatherFrameApp extends ApplicationV2 {
     if (!tool?.current()) throw new Error("Load an image first.");
     await this.previewStop();
 
-    const pkg = await buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress);
+    const pkg = await buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, portraitFrom }, progress);
     const message = needsApproval(!!pkg.wildcard) ? await requestApproval(pkg, progress) : await applyPackage(actor, pkg, progress);
     for (const item of pkg.items) tool.markSaved?.(item);
     return message;
@@ -535,7 +534,7 @@ function keepScale(scale, prefix = "") {
 }
 
 /* Everything a send needs, rendered in the tool: the token images, the portrait and the edit files. */
-async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, saveEdits, portraitFrom }, progress) {
+async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlaced, wildcard, portraitFrom }, progress) {
   const it = tool.current();
   const sent = wildcard ? tool.items().filter((i) => wildcard.ids.includes(i.id)) : [it];
   if (wildcard) {
@@ -554,12 +553,10 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
   const from = (wildcard && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
   const pf = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
   const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf } : null;
-  let edits = null;
-  if (saveEdits) {
-    progress("Saving edits...");
-    edits = [];
-    for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
-  }
+  // Every send saves its edits, so the token can be loaded back later and rebuilt for another ring.
+  progress("Saving edits...");
+  const edits = [];
+  for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
   return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
