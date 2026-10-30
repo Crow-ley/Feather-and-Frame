@@ -545,7 +545,7 @@ function drawPlainRing() {
   ring(400, 402, "#25272b");
   return c.toDataURL("image/png");
 }
-let defaultRing = drawPlainRing(), ringBase = 1024;
+let defaultRing = drawPlainRing(), defaultRingOnly = null, ringBase = 1024;
 const TPL = {
   standard: { cx: 512, cy: 511, r: 342, topk: 0.45, ring: 1, box: [0, 0, 1024] },
   big:      { cx: 512, cy: 511, r: 171, topk: 0.55, ring: 0.5, box: [256, 256, 512] },
@@ -578,7 +578,10 @@ $("ringScale").value = prefs.ringScale; $("ringScaleVal").textContent = prefs.ri
 $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.backScale + "%";
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
-    ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
+    ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null;
+    // Foundry's ring comes with its background filled in, so its inner parts are taken from the ring
+    // drawn on its own (defaultRingOnly) rather than cut out of the filled image.
+    ringFrame = !custom && src === defaultRing && defaultRingOnly ? defaultRingOnly : makeFrame(im);
     $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("tintRow").hidden = $("backGroup").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
@@ -2002,10 +2005,13 @@ let ringAsk = 0;
 async function foundryRing(id) {
   if (!host?.ring) return;
   const n = ++ringAsk;
-  let url = null;
-  try { url = await host.ring(id); } catch (e) { console.warn("Feather & Frame | ring", e); }
+  let url = null, only = null;
+  try { [url, only] = await Promise.all([host.ring(id), host.ringOnly?.(id)]); } catch (e) { console.warn("Feather & Frame | ring", e); }
   if (!url || n !== ringAsk) return;
-  defaultRing = url;
+  let im = null;
+  if (only) { im = new Image(); im.src = only; try { await im.decode(); } catch (e) { im = null; } }
+  if (n !== ringAsk) return;
+  defaultRing = url; defaultRingOnly = im;
   if (!ringRec) loadRing(url, false);
   renderLib();
 }
