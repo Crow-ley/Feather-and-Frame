@@ -552,7 +552,9 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
   // For a wildcard set the portrait can come from any token in the set; otherwise the one being edited.
   const from = (wildcard && portraitFrom && sent.find((i) => i.id === portraitFrom)) || it;
   const pf = portraitFile ?? (usePortrait ? (from.origFile ?? from.file) : null);
-  const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf } : null;
+  // A portrait that is the token's own original image is linked from that token's edit (linkPortrait).
+  const link = portraitFile ? null : { id: from.id, field: from.origFile ? "origFile" : "file" };
+  const portrait = pf ? { name: from.outName, ext: (pf.name?.match(/\.[^.]+$/) || [".webp"])[0].toLowerCase(), blob: pf, link } : null;
   // Every send saves its edits, so the token can be loaded back later and rebuilt for another ring.
   progress("Saving edits...");
   const edits = [];
@@ -564,6 +566,17 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
 // Sent files are named after the actor, so each send overwrites the last instead of adding files.
 // The id keeps actors with the same name apart; compendium actors also carry their pack.
 const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
+
+/* When the portrait is a token's untouched original image, that token's edit file points to the
+   uploaded portrait instead of carrying a second copy of the same picture. loadEdits fetches it back. */
+function linkPortrait(e, portrait, portraitPath) {
+  const link = portrait?.link;
+  if (!link || !portraitPath || link.id !== e.id) return e.json;
+  const doc = JSON.parse(e.json), f = doc.item?.[link.field];
+  if (!f) return e.json;
+  doc.item[link.field] = { name: f.name, type: f.type, link: portraitPath.replace(/\?.*$/, "") };
+  return JSON.stringify(doc);
+}
 
 /* Upload a package's files and update the actor and its placed tokens. */
 async function applyPackage(actor, pkg, progress = () => {}) {
@@ -628,7 +641,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
       const name = wildcard ? `${safeName(e.name)}-${id}` : base;
-      const path = await upload(new File([e.json], `${name}.json`, { type: "application/json" }), editFolder);
+      const path = await upload(new File([linkPortrait(e, pkg.portrait, portraitPath)], `${name}.json`, { type: "application/json" }), editFolder);
       saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
@@ -749,7 +762,7 @@ async function requestApproval(pkg, progress) {
   const body = {
     actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
     tokens: await Promise.all(pkg.tokens.map(async (t) => ({ id: t.id, name: t.name, data: await blobToData(t.blob) }))),
-    portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, data: await blobToData(pkg.portrait.blob) } : null,
+    portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, link: pkg.portrait.link, data: await blobToData(pkg.portrait.blob) } : null,
     edits: pkg.edits,
   };
   const text = JSON.stringify(body);
@@ -891,7 +904,7 @@ async function handleRequest(reqId, userId, text) {
     const pkg = {
       actorId: actor.id, tpl, baked: !!body.baked, wildcard, updatePlaced: !!body.updatePlaced,
       tokens: tokens.map((t, i) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: tokenBlobs[i] })),
-      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob } : null,
+      portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob, link: portraitLink(portrait.link) } : null,
       edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,
     };
     const message = await applyPackage(actor, pkg);
@@ -923,19 +936,40 @@ async function listSet(setFolder, fallback) {
 /* Saved edits listed on an actor, and loading their files back as text for the tool. The list is
    an actor flag its owner can write, so only paths on this server (or the Forge's file store) are
    read, and a file is used only if it is a saved edit whose images are written in as data URLs:
-   the tool turns those into files, and any other address would make it fetch from elsewhere. */
+   the tool turns those into files, and any other address would make it fetch from elsewhere.
+   A link to the portrait is the one exception, and fillLinks swaps it for the image first. */
 function savedEdits(actor) {
   const list = actor?.getFlag?.(ID, "edits");
   return Array.isArray(list) ? list.filter((e) => editPathOk(e?.path)) : [];
 }
-function editPathOk(path) {
+// A path on this server (or the Forge's file store) with no way out of its folder, ending in one of ext.
+function pathOk(path, ext) {
   const p = String(path ?? "");
   if (/^https:/i.test(p)) {
     let u; try { u = new URL(p); } catch (e) { return false; }
-    return fileSource() === "forgevtt" && /(^|\.)forge-vtt\.com$/i.test(u.hostname) && /\.json$/i.test(u.pathname);
+    return fileSource() === "forgevtt" && /(^|\.)forge-vtt\.com$/i.test(u.hostname) && ext.test(u.pathname);
   }
-  if (!/^[\w\-. ()'%/]+\.json$/i.test(p) || p.startsWith("//") || /%2e|%2f|%5c/i.test(p)) return false;
+  if (!/^[\w\-. ()'%/]+$/.test(p) || !ext.test(p) || p.startsWith("//") || /%2e|%2f|%5c/i.test(p)) return false;
   return !p.replace(/^\//, "").split("/").some((s) => !s || s === "." || s === "..");
+}
+const editPathOk = (p) => pathOk(p, /\.json$/i);
+const IMAGE_TYPES = ["png", "jpeg", "webp", "gif", "avif"];
+/* The portrait link a player's request may carry: which of its tokens, and which image of it. */
+const portraitLink = (l) => (l && /^[a-z0-9]+$/i.test(String(l.id)) && ["file", "origFile"].includes(l.field) ? { id: String(l.id), field: l.field } : null);
+/* An edit's image stored as a link to the portrait is fetched and written back in as a data URL,
+   so the tool always gets a self-contained edit. The link must be an image on this server. */
+async function fillLinks(text) {
+  let doc; try { doc = JSON.parse(text); } catch (e) { return text; }
+  for (const key of ["file", "origFile"]) {
+    const f = doc?.item?.[key];
+    if (!f?.link) continue;
+    if (!pathOk(f.link, /\.(png|jpe?g|webp|gif|avif)$/i)) throw new Error("bad portrait link");
+    const res = await fetch(`${routeOf(f.link)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
+    if (!res.ok) throw new Error(res.status);
+    const blob = await checkedImage(await blobToData(await res.blob()), IMAGE_TYPES, "the portrait isn't an image");
+    doc.item[key] = { name: f.name, type: blob.type, data: await blobToData(blob) };
+  }
+  return JSON.stringify(doc);
 }
 const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/]*={0,2}$/;
 function validEdit(json) {
@@ -956,7 +990,7 @@ async function loadEdits(actor) {
     try {
       const res = await fetch(`${routeOf(e.path)}?v=${Date.now().toString(36)}`, { cache: "no-cache" });
       if (!res.ok) throw new Error(res.status);
-      const text = await res.text();
+      const text = await fillLinks(await res.text());
       if (!validEdit(text)) throw new Error("not a saved edit");
       texts.push(text);
     } catch (err) { missing++; }
