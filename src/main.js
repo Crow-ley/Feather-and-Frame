@@ -40,36 +40,14 @@ Hooks.once("ready", async () => {
   foundry.utils.debouncedReload();
 });
 
-/* Ring shader for uploaded rings. It is Foundry's own shader with one line changed: inside the
-   image circle the ring is drawn over the token image, so a ring's inner overhang stays in front
-   of the character. Outside the circle the character stays on top, as in Foundry. The circle is
-   at 0.668 of the frame's half-width (342 of 512 px), where the tool puts every ring's inner edge.
-   If Foundry's shader no longer has the line, the rings use Foundry's shader and lose the overhang. */
-const RING_BLEND = "vec4 blendedResult = blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);";
-const OVERHANG_BLEND = `vec4 blendedResult = (dist < 0.668)
-      ? blend(ringColor * rectangularMask, blend(processedColor, backgroundColor * rectangularMask))
-      : blend(processedColor, blend(ringColor, backgroundColor) * rectangularMask);`;
-function overhangShader() {
-  const Base = foundry.canvas.rendering.shaders.TokenRingSamplerShader;
-  const frag = Base._batchFragmentShader;
-  if (typeof frag !== "string" || !frag.includes(RING_BLEND)) {
-    console.warn(`${TITLE} | Foundry's ring shader has changed, so uploaded rings are drawn without inner overhang.`);
-    return null;
-  }
-  return class FeatherFrameRingShader extends Base {
-    static classPluginName = "featherFrameRingBatch";
-    static _batchFragmentShader = frag.replace(RING_BLEND, OVERHANG_BLEND);
-  };
-}
-
 // Uploaded rings join Foundry's ring list. Foundry only takes new rings during this hook,
-// so a ring added later appears after a reload.
+// so a ring added later appears after a reload. They use Foundry's own ring shader; a ring's
+// inner overhang is cut out of each token image instead (see composeToken in the tool).
 Hooks.once("initializeDynamicTokenRingConfig", (ringConfig) => {
   const RingData = foundry.canvas.placeables.tokens.DynamicRingData;
-  const shaderClass = overhangShader(), framework = shaderClass ? { framework: { shaderClass } } : {};
   for (const r of game.settings.get(ID, "rings")) {
     if (!r?.id) continue;
-    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet, ...framework })); }
+    try { ringConfig.addConfig(r.id, new RingData({ id: r.id, label: r.label, spritesheet: r.spritesheet })); }
     catch (e) { console.warn(`${TITLE} | Couldn't add ring "${r.label}"`, e); }
   }
 });
