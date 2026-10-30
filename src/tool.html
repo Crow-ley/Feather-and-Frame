@@ -1928,10 +1928,16 @@ $("actorFind").oninput = () => { filterActors(); showHits(); };
 $("actorFind").onfocus = showHits;
 $("actorFind").onblur = () => { $("actorHits").hidden = true; };
 
-/* The list under the search box. Shows while there's text, picked actor highlighted. */
+/* The actors listed under the search box: from the second letter on, and no more than the user's
+   "Actor search results" setting (5 unless changed), so a big world doesn't load hundreds of pictures. */
+function searchHits() {
+  if ($("actorFind").value.trim().length < 2) return [];
+  return [...$("actorSel").options].filter((o) => o.value && matchesSearch(o)).slice(0, host?.searchLimit?.() || 5);
+}
+/* The list under the search box, picked actor highlighted. */
 function showHits() {
   const box = $("actorHits"), sel = $("actorSel");
-  const found = $("actorFind").value.trim() ? [...sel.options].filter((o) => o.value && matchesSearch(o)) : [];
+  const found = searchHits();
   box.replaceChildren(...found.map((o) => {
     const row = document.createElement("div");
     const img = document.createElement("img");
@@ -1951,7 +1957,8 @@ function showHits() {
    search. The cursor stays in the box, so you can keep typing. */
 $("actorFind").onkeydown = (e) => {
   const sel = $("actorSel");
-  const found = [...sel.options].filter((o) => o.value && matchesSearch(o));
+  // Arrow keys step through the listed actors; before the list appears, through every match.
+  const hits = searchHits(), found = hits.length ? hits : [...sel.options].filter((o) => o.value && matchesSearch(o));
   const at = found.findIndex((o) => o.value === sel.value);
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
