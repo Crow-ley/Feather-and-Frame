@@ -554,7 +554,7 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
   progress("Saving edits...");
   const edits = [];
   for (const item of sent) edits.push({ id: item.id, name: item.outName, json: await tool.exportEdit(item.id) });
-  return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
+  return { actorId: keyOf(actor), tpl: it.tpl, baked: !!tool.baked?.(), cut: !!tool.overhang?.(), wildcard: wildcard ? { add: !!wildcard.add } : null,
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
 
@@ -617,6 +617,10 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   // Foundry draws whichever image it picked inside the ring.
   update["prototypeToken.randomImg"] = !!wildPath;
   update[`flags.${ID}.wildcard`] = setInfo;
+  // What the automatic update needs to recut a dynamic token later: the world it was made in, the
+  // world ring's spritesheet (its ?v= tag changes with every upload, so it pins the exact ring shape)
+  // and whether Inner Ring Overhang was on. Baked tokens have their ring in the image, so they get none.
+  update[`flags.${ID}.ring`] = baked ? null : { world: game.world.id, sheet: ringSheetPath(), cut: !!pkg.cut };
   // src is the plain token image: a random set image, the portrait, or the token itself.
   // The ring always shows the edited token (or, for a set, whichever image Foundry picked).
   const tokenUpdate = (src) => ({ ...(baked
@@ -635,14 +639,16 @@ async function applyPackage(actor, pkg, progress = () => {}) {
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
   }
 
-  // Saved edits: one JSON file per token in the actor's folder, listed on the actor.
+  // Saved edits: one JSON file per token in the actor's folder, listed on the actor. Each entry also
+  // names the token image made from it, so a recut can overwrite that same file.
   if (pkg.edits) {
     const saved = [];
+    const tokenOf = new Map(pkg.tokens.map((t, i) => [t.id, (wildcard ? setPaths[i] : tokenPath).replace(/\?.*$/, "")]));
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
       const file = wildcard ? `${name}-edit-${id}` : `${name}-edit`;
       const path = await upload(new File([linkPortrait(e, pkg.portrait, portraitPath)], `${file}.json`, { type: "application/json" }), folder);
-      saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
+      saved.push({ id, name: e.name, path: path.replace(/\?.*$/, ""), token: tokenOf.get(e.id) ?? null });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
     const keep = wildcard?.add ? savedEdits(actor).filter((e) => !saved.some((s) => s.id === e.id)) : [];
@@ -760,7 +766,7 @@ async function requestApproval(pkg, progress) {
   if (!gm) throw new Error("No GM is online to approve this. Try again when your GM is connected.");
   progress("Packing the token for your GM...");
   const body = {
-    actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
+    actorId: pkg.actorId, tpl: pkg.tpl, baked: pkg.baked, cut: pkg.cut, wildcard: pkg.wildcard, updatePlaced: pkg.updatePlaced,
     tokens: await Promise.all(pkg.tokens.map(async (t) => ({ id: t.id, name: t.name, data: await blobToData(t.blob) }))),
     portrait: pkg.portrait ? { name: pkg.portrait.name, ext: pkg.portrait.ext, link: pkg.portrait.link, data: await blobToData(pkg.portrait.blob) } : null,
     edits: pkg.edits,
@@ -902,7 +908,7 @@ async function handleRequest(reqId, userId, text) {
     if (choice !== "approve") return reply(false, `${game.user.name} declined the token.`);
 
     const pkg = {
-      actorId: actor.id, tpl, baked: !!body.baked, wildcard, updatePlaced: !!body.updatePlaced,
+      actorId: actor.id, tpl, baked: !!body.baked, cut: !!body.cut, wildcard, updatePlaced: !!body.updatePlaced,
       tokens: tokens.map((t, i) => ({ id: String(t.id ?? ""), name: String(t.name ?? "token"), blob: tokenBlobs[i] })),
       portrait: portrait ? { name: String(portrait.name ?? "portrait"), ext, blob: portraitBlob, link: portraitLink(portrait.link) } : null,
       edits: edits?.length ? edits.map((e) => ({ id: String(e.id ?? ""), name: String(e.name ?? "token"), json: e.json })) : null,

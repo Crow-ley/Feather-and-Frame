@@ -2216,6 +2216,6 @@ $("loadEdits").onclick = async () => {
   finally { btn.disabled = false; }
 };
 
-window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, flush: persistNow, attachHost, setActor, exportEdit };
+window.CCS = { toggleHelp, current: () => cur, items: () => items, encode, markSaved, baked: bakedRing, overhang: innerOverhang, flush: persistNow, attachHost, setActor, exportEdit };
 loadKeptList();
 </script>
