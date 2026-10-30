@@ -8,8 +8,7 @@ const TITLE = "Feather & Frame";
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
-  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder.", type: String, default: "tokens/actors" });
-  reg("portraitFolder", { name: "Portrait upload folder", hint: "Folder for portrait images. Each world saves into its own subfolder.", type: String, default: "tokens/actors/portraits" });
+  reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder, with a folder per actor for its token, portrait and saved edits.", type: String, default: "tokens/actors" });
   reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
   reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Each world saves into its own subfolder.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
@@ -566,13 +565,15 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
     updatePlaced: !!updatePlaced, tokens, portrait, edits, items: sent };
 }
 
-// Sent files are named after the actor, so each send overwrites the last instead of adding files.
-// The id keeps actors with the same name apart; compendium actors also carry their pack.
+// Each actor's files (token, portrait, saved edits, wildcard sets) share one folder named after the
+// actor, so each send overwrites the last instead of adding files. The id keeps actors with the same
+// name apart; compendium actors also carry their pack.
 const fileBase = (actor) => safeName(`${actor.name || "actor"}-${actor.pack ? `${actor.pack.replace(/\./g, "-")}-` : ""}${actor.id}`).replace(/\s+/g, "-");
-// Compendium actors get a folder of their own. A world actor imported from a compendium keeps the
-// compendium's id, so with a name like "Goblin-dnd5e-monsters" it would otherwise get the same file
-// name as the compendium Goblin, and its sends would overwrite that actor's files.
-const sendFolder = (key, actor) => `${worldFolder(key)}${actor.pack ? "/compendiums" : ""}`;
+const fileName = (actor) => safeName(actor.name || "actor").replace(/\s+/g, "-");
+// Compendium actors' folders go in a folder of their own. A world actor imported from a compendium
+// keeps the compendium's id, so with a name like "Goblin-dnd5e-monsters" it would otherwise get the
+// same folder as the compendium Goblin, and its sends would overwrite that actor's files.
+const actorFolder = (actor) => `${worldFolder("tokenFolder")}${actor.pack ? "/compendiums" : ""}/${fileBase(actor)}`;
 
 /* When the portrait is a token's untouched original image, that token's edit file points to the
    uploaded portrait instead of carrying a second copy of the same picture. loadEdits fetches it back. */
@@ -588,9 +589,9 @@ function linkPortrait(e, portrait, portraitPath) {
 /* Upload a package's files and update the actor and its placed tokens. */
 async function applyPackage(actor, pkg, progress = () => {}) {
   const { baked, wildcard } = pkg;
-  const base = fileBase(actor);
+  const name = fileName(actor);
   const { big, scale, correction } = tokenConfig(pkg.tpl, baked);
-  const folder = sendFolder("tokenFolder", actor);
+  const folder = actorFolder(actor);
   const n = pkg.tokens.length;
 
   // One token, or a wildcard set: several tokens in their own folder, picked at random by Foundry.
@@ -598,10 +599,10 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (!wildcard) {
     progress("Uploading token...");
     const t = pkg.tokens[0];
-    tokenPath = await upload(new File([t.blob], `${base}.webp`, { type: "image/webp" }), folder);
+    tokenPath = await upload(new File([t.blob], `${name}-token.webp`, { type: "image/webp" }), folder);
   } else {
     const existing = wildcard.add ? wildcardSet(actor) : null;
-    const setFolder = existing?.folder ?? `${cleanFolder(folder)}/${safeName(actor.name).replace(/\s+/g, "-")}-${Date.now().toString(36)}`;
+    const setFolder = existing?.folder ?? `${folder}/set-${Date.now().toString(36)}`;
     const stamp = Date.now().toString(36);
     for (const [i, t] of pkg.tokens.entries()) {
       progress(`Uploading token ${i + 1} of ${n}...`);
@@ -635,20 +636,19 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   if (pkg.portrait) {
     progress("Uploading the portrait...");
     const p = pkg.portrait;
-    portraitPath = await upload(new File([p.blob], `${base}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), sendFolder("portraitFolder", actor));
+    portraitPath = await upload(new File([p.blob], `${name}-portrait${p.ext}`, { type: p.blob.type || "image/webp" }), folder);
     update.img = portraitPath;
     // With a single ring token, the plain token image is the portrait, shown if the ring is turned off.
     if (!baked && !wildPath) { update["prototypeToken.texture.src"] = portraitPath; placedSrc = () => portraitPath; }
   }
 
-  // Saved edits: one JSON file per token in <token folder>/edits, listed on the actor.
+  // Saved edits: one JSON file per token in the actor's folder, listed on the actor.
   if (pkg.edits) {
-    const editFolder = `${cleanFolder(folder)}/edits`;
     const saved = [];
     for (const e of pkg.edits) {
       const id = /^[a-z0-9]+$/i.test(e.id) ? e.id : foundry.utils.randomID();
-      const name = wildcard ? `${safeName(e.name)}-${id}` : base;
-      const path = await upload(new File([linkPortrait(e, pkg.portrait, portraitPath)], `${name}.json`, { type: "application/json" }), editFolder);
+      const file = wildcard ? `${name}-edit-${id}` : `${name}-edit`;
+      const path = await upload(new File([linkPortrait(e, pkg.portrait, portraitPath)], `${file}.json`, { type: "application/json" }), folder);
       saved.push({ id, name: e.name, path: path.replace(/\?.*$/, "") });
     }
     // Adding to a wildcard set keeps the edits already saved for the set.
