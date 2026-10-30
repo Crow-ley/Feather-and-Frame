@@ -8,18 +8,21 @@ const TITLE = "Feather & Frame";
 Hooks.once("init", () => {
   const reg = (key, data) => game.settings.register(ID, key, { scope: "world", config: true, ...data });
   reg("allowPlayers", { name: "Let players conjure their own tokens", hint: "Players can open Feather & Frame for actors they own and update their token and portrait. Players without Foundry's Upload New Files permission (or Use File Browser, for wildcard sets) send their token to a GM, who approves it before anything is uploaded.", type: Boolean, default: false });
+  // Foundry lists settings in the order they're registered: folders, then rings, then how the tool
+  // opens, and the scale values at the bottom.
   reg("tokenFolder", { name: "Token upload folder", hint: "Folder inside your Foundry data where finished tokens are saved. Each world saves into its own subfolder, with a folder per actor for its token, portrait and saved edits.", type: String, default: "tokens/actors" });
-  reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
   reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool. Every world on this server that uses the same folder shares its rings.", type: String, default: "tokens/ring-spritesheets" });
-  reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
-  reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
-  reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("bakeRings", { name: "Disable dynamic rings", hint: "Every token is sent with its ring saved into the image, even without a saved ring or background, and Foundry's dynamic ring is turned off for it. Baked rings don't get ring effects, and keep the ring color they had when sent.", type: Boolean, default: false });
+  reg("hiResRings", { name: "High res for 3x3 and 4x4 rings", hint: "Rings created while this is on include a sharper version for tokens 3 squares and bigger. It only affects rings created after it's changed, and uses about four times the graphics memory on every player's computer while that ring is the world's ring.", type: Boolean, default: false });
   // Off by default when Tokenizer is also installed and active, so the two don't both claim the click.
   const tokenizer = ["vtta-tokenizer", "tokenizer-2"].some((m) => game.modules.get(m)?.active);
   reg("portraitClick", { name: "Portrait click opens Feather & Frame", hint: "Clicking an actor's portrait while its sheet is in edit mode opens Feather & Frame for that actor. Hold Shift while clicking to get Foundry's file picker instead. Sheets that have no edit mode open Feather & Frame on every portrait click.", type: Boolean, default: !tokenizer });
   reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or click its portrait. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
-  reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
+  reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
+  reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
+  reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
   // This world's copy of the shared ring list, each { id, label, spritesheet } (see "Shared ring list").
@@ -437,6 +440,7 @@ class FeatherFrameApp extends ApplicationV2 {
       // Checked against the shared list, so a ring made in another world counts too.
       ringLabel: async (id) => ((await readSharedRings().catch(() => null)) ?? game.settings.get(ID, "rings")).find((r) => r?.id === id)?.label ?? null,
       uploadRing: game.user.isGM ? (opts) => uploadRing(opts) : null,
+      hiResRings: () => game.settings.get(ID, "hiResRings"),
       applyRing: game.user.isGM ? async (id) => { await game.settings.set(ID, "applyRing", id); foundry.utils.debouncedReload(); } : null,
       uploadedRings: game.user.isGM ? () => game.settings.get(ID, "rings").filter((r) => r?.id).map((r) => ({ id: r.id, label: r.label,
         file: String(r.spritesheet).replace(/\?.*$/, ""), world: r.id === game.settings.get("core", "dynamicTokenRing") })) : null,

@@ -826,7 +826,9 @@ function drawRingOver(x, it, img, circleOnly, cut = false) {
   octx.setTransform(1, 0, 0, 1, 0, 0); octx.globalCompositeOperation = "source-over"; octx.clearRect(0, 0, W, H);
   octx.setTransform(tf); octx.imageSmoothingQuality = "high";
   octx.save();
-  if (circleOnly) { octx.beginPath(); octx.arc(T.cx, T.cy, T.r, 0, Math.PI * 2); octx.clip(); }
+  // The ring layer reaches 2 px past the image circle. The art's own edge there is softened, and an
+  // exact match would leave a thin line of art showing through where the two soft edges meet.
+  if (circleOnly) { octx.beginPath(); octx.arc(T.cx, T.cy, T.r + 2, 0, Math.PI * 2); octx.clip(); }
   octx.drawImage(img, ...ringRect(T));
   octx.restore();
   pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.globalCompositeOperation = "source-over"; pctx.clearRect(0, 0, W, H);
@@ -1548,7 +1550,7 @@ $("ringUpGo").onclick = async () => {
   go.disabled = $("ringUpCancel").disabled = true;
   try {
     st.textContent = "Building the spritesheet...";
-    const { image, json } = await buildRingSheet(id);
+    const { image, json } = await buildRingSheet(id, !!host.hiResRings?.());
     st.textContent = "Uploading...";
     await host.uploadRing({ name, image, json });
     ringUpDone = id; $("ringUpName").disabled = true;
@@ -1740,23 +1742,32 @@ function encode(it) {
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", q));
 }
 /* Spritesheet for a Foundry dynamic ring, built from the ring, background and tint in the tool.
-   Each size has a background frame and a ring frame side by side: 2048 on the top row, then 1024,
-   512 and 256 below. Every frame matches the 1024 token canvas, so the ring sits on the token the
-   way the preview shows it. Frame names start with the ring's id so they can't clash with other sheets. */
-const SHEET = [
+   Each size has a background frame and a ring frame side by side. Every frame matches the 1024 token
+   canvas, so the ring sits on the token the way the preview shows it. Frame names start with the
+   ring's id so they can't clash with other sheets.
+   The sheet stays in every player's graphics memory while it's the world's ring, so by default it
+   stops at 1024 (2048 x 1536, about 12 MB): 1024 on the top row, 512 and 256 below. Tokens 3 squares
+   and bigger then use the 1024 frame. The "High resolution rings" setting adds 2048 frames for them
+   (4096 x 3072, about 50 MB). */
+const SHEET = { w: 2048, h: 1536, frames: [
+  { size: 1024, x: 0, y: 0, grid: 2 },
+  { size: 512, x: 0, y: 1024, grid: 1 },
+  { size: 256, x: 1024, y: 1024, grid: 0.5 },
+] };
+const SHEET_HI = { w: 4096, h: 3072, frames: [
   { size: 2048, x: 0, y: 0, grid: 3 },
   { size: 1024, x: 0, y: 2048, grid: 2 },
   { size: 512, x: 2048, y: 2048, grid: 1 },
   { size: 256, x: 3072, y: 2048, grid: 0.5 },
-];
-async function buildRingSheet(id) {
-  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T);
-  const img = document.createElement("canvas"); img.width = 4096; img.height = 3072;
+] };
+async function buildRingSheet(id, hiRes = false) {
+  const T = TPL.standard, [rx, ry, rw, rh] = ringRect(T), layout = hiRes ? SHEET_HI : SHEET;
+  const img = document.createElement("canvas"); img.width = layout.w; img.height = layout.h;
   const x = img.getContext("2d"); x.imageSmoothingQuality = "high";
   const frame = (fx, fy, s, extra) => ({ frame: { x: fx, y: fy, w: s, h: s }, rotated: false, trimmed: false,
     spriteSourceSize: { x: 0, y: 0, w: s, h: s }, sourceSize: { w: s, h: s }, anchor: { x: 0.5, y: 0.5 }, ...extra });
   const frames = {};
-  for (const { size: s, x: fx, y: fy, grid } of SHEET) {
+  for (const { size: s, x: fx, y: fy, grid } of layout.frames) {
     const k = s / 1024, name = `${id}-${s}`;
     x.save(); x.beginPath(); x.rect(fx, fy, s, s); x.clip(); x.setTransform(k, 0, 0, k, fx, fy); drawBack(x, T); x.restore();
     x.save(); x.beginPath(); x.rect(fx + s, fy, s, s); x.clip(); x.drawImage(ring, fx + s + rx * k, fy + ry * k, rw * k, rh * k); x.restore();
@@ -1768,7 +1779,8 @@ async function buildRingSheet(id) {
   const band = prefs.tintOn ? { startRadius: r(prefs.tintStart), endRadius: r(prefs.tintEnd) } : { startRadius: 0, endRadius: 0 };
   const json = { frames, config: { defaultColorBand: band, defaultRingColor: prefs.tintColor },
     meta: { app: "Feather & Frame", image: `${id}.webp`, format: "RGBA8888", size: { w: img.width, h: img.height }, scale: "1" } };
-  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", +prefs.quality));
+  // A fixed quality, not the token Quality setting: every player downloads this file, so Lossless would cost them all.
+  const image = await new Promise((res, rej) => img.toBlob((b) => (b ? res(b) : rej(new Error("encode"))), "image/webp", 0.9));
   return { image, json };
 }
 async function saveBlob(name, blob) {
