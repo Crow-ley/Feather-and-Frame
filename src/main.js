@@ -13,10 +13,10 @@ Hooks.once("init", () => {
   reg("ringFolder", { name: "Ring spritesheet upload folder", hint: "Folder for dynamic rings uploaded from the tool.", type: String, default: "tokens/ring-spritesheets" });
   reg("stdScale", { name: "Standard: token scale", type: Number, default: 1 });
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
-  reg("bigScale", { name: "Big Chungus: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
+  reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
   reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or use the crow on its sheet. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
   reg("checkUpdates", { name: "Check GitHub for updates", hint: "Once per session, when a GM opens the window, ask GitHub whether a newer version is out. This sends one request to api.github.com and nothing else.", type: Boolean, default: true });
-  reg("bigCorrection", { name: "Big Chungus: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Big Chungus images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
+  reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "saveEdits", { scope: "client", config: false, type: Boolean, default: true });
@@ -544,7 +544,7 @@ function tokenConfig(tpl, baked) {
 }
 
 /* PF2e's "Autoscale" token option sets a token's scale back to 1 (0.8 for small creatures) every
-   time the token is drawn, which would undo a Big Chungus scale of 2. When the scale isn't 1 it
+   time the token is drawn, which would undo an Oversized scale of 2. When the scale isn't 1 it
    is turned off for that token, the same as unticking Autoscale in its Token Config. Other
    systems get nothing extra. prefix is "prototypeToken." for the actor's prototype token. */
 function keepScale(scale, prefix = "") {
@@ -556,7 +556,7 @@ async function buildPackage(actor, tool, { usePortrait, portraitFile, updatePlac
   const it = tool.current();
   const sent = wildcard ? tool.items().filter((i) => wildcard.ids.includes(i.id)) : [it];
   if (wildcard) {
-    if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Big Chungus tokens.");
+    if (sent.some((i) => i.tpl !== it.tpl)) throw new Error("A wildcard set can't mix Standard and Oversized tokens.");
     const existing = wildcard.add ? wildcardSet(actor) : null;
     if (!sent.length || (sent.length < 2 && !existing)) throw new Error("A new wildcard set needs at least two tokens.");
   }
@@ -674,7 +674,7 @@ async function applyPackage(actor, pkg, progress = () => {}) {
   }
 
   ui.notifications.info(`${TITLE}: ${wildPath ? "wildcard set" : "token"} sent to ${actor.name}.`);
-  const parts = [(big ? "Big Chungus" : "Standard") + (baked ? ", ring baked in" : ""), `scale ${scale}`];
+  const parts = [(big ? "Oversized" : "Standard") + (baked ? ", ring baked in" : ""), `scale ${scale}`];
   if (!baked) parts.push(`scale correction ${correction}`);
   if (wildPath) parts.push(`${n} token${n > 1 ? "s" : ""} ${wildcard.add && setInfo.count > n ? `added, ${setInfo.count} in the set` : "in the wildcard set"}`);
   if (pkg.edits) parts.push("edits saved");

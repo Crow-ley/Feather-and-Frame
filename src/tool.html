@@ -295,10 +295,10 @@ header p { flex: 0 1 auto; }
         </div>
         <div class="seg" id="tpl">
           <button data-v="standard" aria-pressed="true">Standard</button>
-          <button data-v="big" aria-pressed="false">Big Chungus</button>
+          <button data-v="big" aria-pressed="false">Oversized</button>
         </div>
         <p class="hint"><strong>Standard</strong>: standard tokens with little overhang.</p>
-        <p class="hint"><strong>Big Chungus</strong>: overhang exceeds the grid square.</p>
+        <p class="hint"><strong>Oversized</strong>: overhang exceeds the grid square.</p>
       </div>
 
       <div class="group">
@@ -2029,7 +2029,7 @@ function fillWild(id) {
     const c = document.createElement("canvas"); c.width = c.height = 72;
     c.getContext("2d").drawImage(renderToken(it, 144), 0, 0, 72, 72);
     const nm = document.createElement("span");
-    nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Big Chungus" : "Standard"}, can't mix templates)`);
+    nm.textContent = it.outName + (ok ? "" : ` (${it.tpl === "big" ? "Oversized" : "Standard"}, can't mix templates)`);
     nm.title = nm.textContent;
     row.append(cb, c, nm); list.append(row);
   }
