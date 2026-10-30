@@ -15,12 +15,10 @@ Hooks.once("init", () => {
   reg("stdCorrection", { name: "Standard: ring scale correction", type: Number, default: 1 });
   reg("bigScale", { name: "Oversized: token scale", hint: "Token scale enlarges the ring and the image together.", type: Number, default: 2 });
   reg("compendiumActors", { name: "Compendium actors", hint: "Lets GMs make tokens for actors stored in compendiums: drag one from a compendium onto the tool's actor box, or use the crow on its sheet. Sending changes the compendium entry, so the compendium has to be unlocked.", type: Boolean, default: true });
-  reg("checkUpdates", { name: "Check GitHub for updates", hint: "Once per session, when a GM opens the window, ask GitHub whether a newer version is out. This sends one request to api.github.com and nothing else.", type: Boolean, default: true });
   reg("bigCorrection", { name: "Oversized: ring scale correction", hint: "Scale correction enlarges only the image inside the ring. Oversized images are drawn at half size, so 2 makes it fill the ring.", type: Number, default: 2 });
   game.settings.register(ID, "searchLimit", { scope: "client", config: true, name: "Actor search results", hint: "How many matching actors the tool lists under its search box. The list appears from the second letter typed.", type: Number, range: { min: 1, max: 50, step: 1 }, default: 5 });
   game.settings.register(ID, "usePortrait", { scope: "client", config: false, type: Boolean, default: true });
   game.settings.register(ID, "updatePlaced", { scope: "client", config: false, type: Boolean, default: true });
-  game.settings.register(ID, "skipVersion", { scope: "client", config: false, type: String, default: "" });
   // Rings uploaded from the tool, each { id, label, spritesheet }.
   game.settings.register(ID, "rings", { scope: "world", config: false, type: Array, default: [] });
   // An uploaded ring waiting to become the world's ring on the next load (see the ready hook below).
@@ -1038,57 +1036,11 @@ function openApp(actor) {
   if (!app) app = new FeatherFrameApp();
   if (actor) app.actor = actor;
   Promise.resolve(app.render({ force: true })).then(() => { if (actor) app.setActor(actor); });
-  checkForUpdate();
   return app;
 }
 
-// Update check
-// The module isn't listed on Foundry's package site yet, so it checks its GitHub releases itself.
-// Runs once per session, for the GM only, the first time the window opens.
-const REPO = "Crow-ley/Feather-and-Frame";
-const MANIFEST = `https://github.com/${REPO}/releases/latest/download/module.json`;
-let updateChecked = false;
+// Text going into a dialog's HTML (the GM approval dialog).
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-async function checkForUpdate() {
-  if (updateChecked || !game.user.isGM || !game.settings.get(ID, "checkUpdates")) return;
-  updateChecked = true;
-  let release;
-  try {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } });
-    if (!res.ok) return;
-    release = await res.json();
-  } catch (e) { return; } // offline or GitHub unreachable: say nothing
-  // Everything from GitHub is checked before use: the tag must be a plain version number
-  // and the link must point into this repository. Both are escaped before they go into HTML.
-  const latest = String(release.tag_name ?? "").replace(/^v/i, "");
-  if (!/^\d+(\.\d+){0,3}$/.test(latest)) return;
-  const installed = game.modules.get(ID)?.version ?? "0";
-  if (!foundry.utils.isNewerVersion(latest, installed)) return;
-  if (game.settings.get(ID, "skipVersion") === latest) return;
-  const fallback = `https://github.com/${REPO}/releases/latest`;
-  const url = String(release.html_url ?? "");
-  const page = url.toLowerCase().startsWith(`https://github.com/${REPO}/releases/`.toLowerCase()) ? url : fallback;
-  const content = `
-    <p>Version <strong>${escapeHtml(latest)}</strong> is out. You have ${escapeHtml(installed)}.</p>
-    <p>To update, go to Foundry's setup screen, open Add-on Modules and click the update button next to ${TITLE}.
-    If that button doesn't appear, uninstall the module and install it again with this manifest URL:</p>
-    <input type="text" readonly value="${escapeHtml(MANIFEST)}" style="width:100%">
-    <p><a href="${escapeHtml(page)}" target="_blank" rel="noopener noreferrer">See what changed on GitHub</a></p>`;
-  const choice = await foundry.applications.api.DialogV2.wait({
-    window: { title: `${TITLE} update available`, icon: "fa-solid fa-feather" },
-    content,
-    buttons: [
-      { action: "copy", label: "Copy manifest URL", icon: "fa-solid fa-copy", default: true },
-      { action: "skip", label: "Skip this version", icon: "fa-solid fa-forward" },
-      { action: "close", label: "Close", icon: "fa-solid fa-xmark" },
-    ],
-    rejectClose: false,
-  }).catch(() => null);
-  if (choice === "copy") {
-    await game.clipboard.copyPlainText(MANIFEST);
-    ui.notifications.info(`${TITLE}: manifest URL copied.`);
-  } else if (choice === "skip") await game.settings.set(ID, "skipVersion", latest);
-}
 
 // Map preview upkeep
 Hooks.on("refreshToken", (t) => app?.previewRefresh(t));
