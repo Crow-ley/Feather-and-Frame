@@ -377,7 +377,7 @@ header p { flex: 0 1 auto; }
       <div class="group">
         <span class="label">Ring and Preview</span>
         <label class="check"><input type="checkbox" id="showRing" checked> Show Ring</label>
-        <p class="hint">Preview only. A custom ring or a background is always saved into the token; otherwise Foundry adds its own ring.</p>
+        <p class="hint">Preview only. A custom ring and its background are always saved into the token; otherwise Foundry adds its own ring.</p>
         <div class="row">
           <label class="btn" for="ringFile">Upload Ring...</label>
           <input id="ringFile" type="file" accept="image/*" hidden>
@@ -385,16 +385,18 @@ header p { flex: 0 1 auto; }
           <button class="btn" id="ringLib">Saved Rings...</button>
         </div>
         <p class="hint">Use a square PNG or WebP with a transparent center. Uploaded rings are saved in Saved Rings.</p>
-        <div class="row">
-          <label class="btn" for="backFile">Upload Background...</label>
-          <input id="backFile" type="file" accept="image/*" hidden>
-          <button class="btn" id="backClear" hidden>No Background</button>
-          <button class="btn" id="backLib">Saved Backgrounds...</button>
-        </div>
-        <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
-        <div class="group" id="backSizeRow" hidden style="gap:6px">
-          <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
-          <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+        <div class="group" id="backGroup" hidden style="gap:6px">
+          <div class="row">
+            <label class="btn" for="backFile">Upload Background...</label>
+            <input id="backFile" type="file" accept="image/*" hidden>
+            <button class="btn" id="backClear" hidden>No Background</button>
+            <button class="btn" id="backLib">Saved Backgrounds...</button>
+          </div>
+          <p class="hint">Fills the circle behind the character. It follows the ring size. Uploaded backgrounds are saved in Saved Backgrounds.</p>
+          <div class="group" id="backSizeRow" hidden style="gap:6px">
+            <label class="label" for="backScale">Background size <span id="backScaleVal">100%</span></label>
+            <input type="range" id="backScale" min="50" max="200" step="1" value="100">
+          </div>
         </div>
         <div class="group" id="ringSizeRow" hidden style="gap:6px">
           <label class="label" for="ringScale">Ring size <span id="ringScaleVal">100%</span></label>
@@ -575,7 +577,7 @@ $("backScale").value = prefs.backScale; $("backScaleVal").textContent = prefs.ba
 function loadRing(src, custom) {
   const im = new Image(); im.onload = () => {
     ring = im; ringCustom = custom; ringBase = custom ? 793 : 1024; ringPix = null; ringFrame = makeFrame(im);
-    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("tintRow").hidden = !custom; bakeNote(); draw();
+    $("ringReset").hidden = !custom; $("ringSizeRow").hidden = $("tintRow").hidden = $("backGroup").hidden = !custom; bakeNote(); draw();
   };
   im.onerror = () => { if (custom) { toast("Couldn't read that ring image.", true); loadRing(defaultRing, false); } };
   im.src = src;
@@ -761,9 +763,11 @@ async function addBackFile(f) {
 (async () => {
   try { const rec = prefs.backId && (await RingDB.get(prefs.backId, "backs")); if (rec) useBack(rec); } catch (e) { /* storage unavailable */ }
 })();
+// A background only goes with a saved ring. It stays picked while Foundry's ring is in use, but isn't drawn.
+const backOn = () => !!back && ringCustom;
 /* Sized like the ring image, since ring backgrounds come padded to match their ring. Clipped to the inner circle. */
 function drawBack(x, T) {
-  if (!back) return;
+  if (!backOn()) return;
   const r = T.r * (prefs.ringScale / 100), size = ringRect(T)[2] * (prefs.backScale / 100);
   const k = size / Math.min(back.naturalWidth, back.naturalHeight);
   const w = back.naturalWidth * k, h = back.naturalHeight * k;
@@ -1687,14 +1691,14 @@ function makeZip(files) {
 }
 let downloads = null;
 
-// A saved ring or background is always baked in; Foundry's ring too when the GM turned dynamic rings off.
+// A saved ring (with its background) is always baked in; Foundry's ring too when the GM turned dynamic rings off.
 const bakeAll = () => !!host?.bakeRings?.();
-const baking = () => !!(ringCustom || back || bakeAll());
+const baking = () => ringCustom || bakeAll();
 function bakedRing() { return baking() && !!ring.naturalWidth; }
 // Inner Ring Overhang only applies to a baked ring, so it shows only then.
 function bakeNote() {
   $("bakeInfo").hidden = $("ringCutRow").hidden = $("ringCutHint").hidden = !baking();
-  $("bakeInfo").textContent = back ? "The ring and background are saved into the token image."
+  $("bakeInfo").textContent = backOn() ? "The ring and background are saved into the token image."
     : ringCustom ? "The custom ring is saved into the token image." : "Dynamic rings are turned off, so the ring is saved into the token image.";
 }
 /* The finished token at a given size, with the ring drawn in when withRing is set. */
